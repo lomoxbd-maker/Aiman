@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">MAX</string>
+    <string name="max_subtitle">Modular AI Assistant Core</string>
+    <string name="nav_core">Core</string>
+    <string name="nav_modules">Modules</string>
+    <string name="nav_diagnostics">Diagnostics</string>
+    <string name="nav_settings">Settings</string>
+    <string name="privacy_shield_title">Privacy Shield Active</string>
+    <string name="privacy_shield_summary">Location stays dormant. Camera, gallery, files, calendar, internet, phone utilities, and supported apps activate strictly on your explicit command and confirmation.</string>
+    <string name="wake_word_keyword">MAX</string>
+    <string name="cd_core_banner">MAX neural core backdrop</string>
+    <string name="cd_core_status">MAX core status indicator</string>
+    <string name="cd_privacy_shield">Privacy shield status</string>
+    <string name="cd_wake_word_mic">Wake word standby indicator</string>
+</resources>
