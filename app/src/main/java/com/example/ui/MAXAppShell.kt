@@ -3,6 +3,9 @@ package com.example.ui
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,6 +55,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -62,20 +66,33 @@ import androidx.navigation.compose.rememberNavController
 import com.example.apps.SupportedApp
 import com.example.floating.FloatingState
 import com.example.permissions.AppPermission
+import com.example.ui.components.MAXGlassBackdrop
 import com.example.ui.navigation.MAXDestination
-import com.example.ui.theme.GradientElectricPurple
-import com.example.ui.theme.GradientRoyalBlue
 import com.example.ui.screens.AppsControlScreen
+import com.example.ui.screens.ChatScreen
 import com.example.ui.screens.CoreDashboardScreen
 import com.example.ui.screens.DiagnosticsScreen
 import com.example.ui.screens.FilesAndSmartScreen
+import com.example.ui.screens.HistoryScreen
 import com.example.ui.screens.InternetScreen
 import com.example.ui.screens.ModulesArchitectureScreen
 import com.example.ui.screens.PhoneControlScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.VisionScreen
+import com.example.ui.theme.DarkGlassSurface
+import com.example.ui.theme.GradientElectricPurple
+import com.example.ui.theme.GradientRoyalBlue
+import com.example.ui.theme.LightGlassSurface
 import com.example.ui.theme.MAXTheme
 import com.example.viewmodel.MAXViewModel
+
+private const val ROUTE_VISION = "max_vision"
+private const val ROUTE_MODULES = "max_modules"
+private const val ROUTE_DIAGNOSTICS = "max_diagnostics"
+private const val ROUTE_INTERNET = "max_internet"
+private const val ROUTE_PHONE = "max_phone"
+private const val ROUTE_APPS = "max_apps"
+private const val ROUTE_FILES_SMART = "max_files_smart"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,7 +100,7 @@ fun MAXAppShell(viewModel: MAXViewModel) {
   val uiState by viewModel.uiState.collectAsStateWithLifecycle()
   val navController = rememberNavController()
   val navBackStackEntry by navController.currentBackStackEntryAsState()
-  val currentRoute = navBackStackEntry?.destination?.route ?: MAXDestination.CORE.route
+  val currentRoute = navBackStackEntry?.destination?.route ?: MAXDestination.HOME.route
   var awaitingOsPermission by remember { mutableStateOf<AppPermission?>(null) }
 
   val runtimePermissionLauncher =
@@ -95,7 +112,9 @@ fun MAXAppShell(viewModel: MAXViewModel) {
       viewModel.onPermissionPromptCompleted(perm, granted)
     }
 
-  MAXTheme(darkTheme = uiState.settings.darkThemePreferred) {
+  val isDark = uiState.settings.darkThemePreferred
+
+  MAXTheme(darkTheme = isDark) {
     uiState.pendingPermissionRequest?.let { pending ->
       AlertDialog(
         onDismissRequest = viewModel::dismissPendingPermissionRequest,
@@ -239,379 +258,384 @@ fun MAXAppShell(viewModel: MAXViewModel) {
       )
     }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-      val useNavRail = maxWidth >= 600.dp
+    MAXGlassBackdrop(modifier = Modifier.fillMaxSize()) {
+      BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val useNavRail = maxWidth >= 600.dp
+        val frostedChromeColor =
+          if (isDark) DarkGlassSurface.copy(alpha = 0.78f) else LightGlassSurface.copy(alpha = 0.86f)
 
-      Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        contentWindowInsets = WindowInsets.safeDrawing,
-        topBar = {
-          CenterAlignedTopAppBar(
-            title = {
-              Text(
-                text = "MAX ASSISTANT",
-                style = MaterialTheme.typography.titleLarge,
-              )
-            },
-            colors =
-              TopAppBarDefaults.centerAlignedTopAppBarColors(
-                containerColor = MaterialTheme.colorScheme.background,
-              ),
-          )
-        },
-        bottomBar = {
-          if (!useNavRail) {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-              MAXDestination.entries.forEach { destination ->
-                val selected = currentRoute == destination.route
-                NavigationBarItem(
-                  selected = selected,
-                  onClick = {
-                    navController.navigate(destination.route) {
-                      popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                      launchSingleTop = true
-                      restoreState = true
-                    }
-                  },
-                  icon = {
-                    Icon(
-                      imageVector = if (selected) destination.selectedIcon else destination.unselectedIcon,
-                      contentDescription = destination.label,
-                    )
-                  },
-                  label = { Text(destination.label) },
-                  modifier = Modifier.testTag(destination.testTag),
+        Scaffold(
+          modifier = Modifier.fillMaxSize(),
+          containerColor = Color.Transparent,
+          contentWindowInsets = WindowInsets.safeDrawing,
+          topBar = {
+            CenterAlignedTopAppBar(
+              title = {
+                Text(
+                  text = "MAX ASSISTANT",
+                  style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                 )
-              }
-            }
-          }
-        },
-      ) { innerPadding ->
-        Row(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-          if (useNavRail) {
-            NavigationRail(containerColor = MaterialTheme.colorScheme.surface) {
-              MAXDestination.entries.forEach { destination ->
-                val selected = currentRoute == destination.route
-                NavigationRailItem(
-                  selected = selected,
-                  onClick = {
-                    navController.navigate(destination.route) {
-                      popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                      launchSingleTop = true
-                      restoreState = true
-                    }
-                  },
-                  icon = {
-                    Icon(
-                      imageVector = if (selected) destination.selectedIcon else destination.unselectedIcon,
-                      contentDescription = destination.label,
-                    )
-                  },
-                  label = { Text(destination.label) },
-                  modifier = Modifier.testTag(destination.testTag),
-                )
-              }
-            }
-          }
-
-          NavHost(
-            navController = navController,
-            startDestination = MAXDestination.CORE.route,
-            modifier = Modifier.fillMaxSize(),
-            enterTransition = {
-              androidx.compose.animation.fadeIn(
-                animationSpec = androidx.compose.animation.core.tween(220),
-              )
-            },
-            exitTransition = {
-              androidx.compose.animation.fadeOut(
-                animationSpec = androidx.compose.animation.core.tween(180),
-              )
-            },
-            popEnterTransition = {
-              androidx.compose.animation.fadeIn(
-                animationSpec = androidx.compose.animation.core.tween(220),
-              )
-            },
-            popExitTransition = {
-              androidx.compose.animation.fadeOut(
-                animationSpec = androidx.compose.animation.core.tween(180),
-              )
-            },
-          ) {
-            composable(MAXDestination.CORE.route) {
-              CoreDashboardScreen(
-                uiState = uiState,
-                onArmWakeWordStandby = viewModel::armWakeWordStandby,
-                onDisarmWakeWordStandby = viewModel::disarmWakeWordStandby,
-                onSimulateWakeWordMax = viewModel::simulateWakeWordMax,
-                onReturnToStandby = viewModel::returnToStandby,
-                onRequestWakeWordPermissionWithExplanation =
-                  viewModel::requestWakeWordPermissionWithExplanation,
-                onSendConversationalMessage = viewModel::sendConversationalMessage,
-                onSelectEmotion = viewModel::selectEmotion,
-                onSpeakText = viewModel::speakText,
-                onPauseSpeaking = viewModel::pauseSpeaking,
-                onResumeSpeaking = viewModel::resumeSpeaking,
-                onStopSpeaking = viewModel::stopSpeaking,
-                onSelectLanguage = viewModel::setVoiceLanguage,
-                onSelectStyle = viewModel::setSpeechStyle,
-                onActivateManualVoiceSession = viewModel::activateManualVoiceSession,
-                onFinishFollowUpToWakeMode = viewModel::finishFollowUpToWakeMode,
-                onOpenCameraQuick = {
-                  navController.navigate(MAXDestination.VISION.route) {
-                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                    launchSingleTop = true
-                    restoreState = true
-                  }
-                },
-                onOpenGalleryQuick = {
-                  navController.navigate(MAXDestination.VISION.route) {
-                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                    launchSingleTop = true
-                    restoreState = true
-                  }
-                },
-                onOpenInternetScreen = { navController.navigate("max_internet") },
-                onOpenPhoneScreen = { navController.navigate("max_phone") },
-                onOpenWhatsAppQuick = {
-                  viewModel.requestOpenApp(SupportedApp.WHATSAPP, requireConfirmation = true)
-                },
-                onOpenAppsScreen = { navController.navigate("max_apps") },
-                onOpenFilesSmartScreen = { navController.navigate("max_files_smart") },
-                onOpenSettingsQuick = {
-                  navController.navigate(MAXDestination.SETTINGS.route) {
-                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                    launchSingleTop = true
-                    restoreState = true
-                  }
-                },
-                onRunRoutine = viewModel::runRoutine,
-                onToggleFloatingBubble = {
-                  if (uiState.floatingState is FloatingState.Inactive) {
-                    viewModel.activateFloatingBubble(preferSystemOverlay = false)
-                  } else {
-                    viewModel.closeFloatingBubble()
-                  }
-                },
-              )
-            }
-            composable("max_files_smart") {
-              FilesAndSmartScreen(
-                uiState = uiState,
-                onBack = { navController.popBackStack() },
-                onRequestOpenFilePicker = viewModel::requestOpenFilePicker,
-                onFilesPicked = viewModel::onFilesPicked,
-                onFilterFiles = viewModel::filterSessionFiles,
-                onOpenAndReadFile = viewModel::openAndReadFile,
-                onRunOcrOnFile = viewModel::runOcrOnFile,
-                onRequestDeleteFile = viewModel::requestDeleteFileItem,
-                onTranslateText = viewModel::translateSmartText,
-                onScheduleReminder = viewModel::scheduleReminder,
-                onToggleReminderCompleted = viewModel::toggleReminderCompleted,
-                onDeleteReminder = viewModel::deleteReminder,
-                onAddNote = viewModel::addSmartNote,
-                onDeleteNote = viewModel::deleteSmartNote,
-                onLoadTodayCalendar = viewModel::loadTodayCalendar,
-                onOpenSystemCalendarInsert = viewModel::openSystemCalendarInsert,
-                onSaveVoiceNote = viewModel::saveVoiceNoteTranscript,
-                onDeleteVoiceNote = viewModel::deleteVoiceNote,
-                onRefreshSuggestions = viewModel::refreshAiSuggestions,
-                onRunVoiceCommand = { cmd -> viewModel.sendConversationalMessage(cmd, true) },
-                onSpeakText = { txt -> viewModel.speakText(txt, null) },
-              )
-            }
-            composable("max_apps") {
-              AppsControlScreen(
-                uiState = uiState,
-                onBack = { navController.popBackStack() },
-                onRefreshAvailability = viewModel::refreshAppAvailability,
-                onRequestOpenApp = { app -> viewModel.requestOpenApp(app, requireConfirmation = true) },
-                onRequestOpenAlternative = viewModel::requestOpenAppAlternative,
-                onRequestWhatsAppDraft = viewModel::requestWhatsAppDraft,
-                onRequestGmailDraft = viewModel::requestGmailDraft,
-                onRequestMapsSearch = viewModel::requestMapsSearch,
-                onRequestChromeUrl = viewModel::requestChromeUrl,
-                onRequestYouTubeSearch = viewModel::requestYouTubeSearch,
-                onRunVoiceCommand = { cmd -> viewModel.sendConversationalMessage(cmd, true) },
-              )
-            }
-            composable("max_phone") {
-              PhoneControlScreen(
-                uiState = uiState,
-                onBack = { navController.popBackStack() },
-                onRequestCall = viewModel::requestPhoneCall,
-                onRequestSms = viewModel::requestSms,
-                onSearchContacts = viewModel::searchPhoneContacts,
-                onSystemContactPicked = viewModel::onSystemContactPicked,
-                onRequestAddOrEditContact = viewModel::requestAddOrEditContact,
-                onRequestSetAlarm = viewModel::requestSetAlarm,
-                onOpenSystemAlarms = viewModel::openSystemAlarms,
-                onStartTimer = viewModel::startTimer,
-                onPauseTimer = viewModel::pauseTimer,
-                onResumeTimer = viewModel::resumeTimer,
-                onResetTimer = viewModel::resetTimer,
-                onStartStopwatch = viewModel::startStopwatch,
-                onPauseStopwatch = viewModel::pauseStopwatch,
-                onLapStopwatch = viewModel::lapStopwatch,
-                onResetStopwatch = viewModel::resetStopwatch,
-                onCalculateMath = viewModel::calculateMath,
-                onRequestToggleFlashlight = viewModel::requestToggleFlashlight,
-                onReleasePhoneResources = viewModel::releasePhoneTaskResources,
-              )
-            }
-            composable("max_internet") {
-              InternetScreen(
-                uiState = uiState,
-                onBack = { navController.popBackStack() },
-                onSearchInternet = viewModel::searchInternet,
-                onOpenWebsite = viewModel::openWebsite,
-                onSummarizeWebContent = viewModel::summarizeWebContent,
-                onOpenExternalVerifiedUrl = viewModel::openExternalVerifiedUrl,
-                onCancelInternetRequest = viewModel::cancelInternetRequest,
-                onCloseBrowserSession = viewModel::closeBrowserSession,
-                onRefreshConnection = viewModel::refreshConnectionQuality,
-                onRunVoiceCommand = { cmd -> viewModel.sendConversationalMessage(cmd, true) },
-                onSpeakText = viewModel::speakText,
-                onStopSpeaking = viewModel::stopSpeaking,
-              )
-            }
-            composable(MAXDestination.VISION.route) {
-              VisionScreen(
-                uiState = uiState,
-                onOpenCamera = viewModel::openCamera,
-                onBindCameraXSession = viewModel::bindCameraXSession,
-                onCapturePhoto = viewModel::capturePhoto,
-                onStartVideoRecording = viewModel::startVideoRecording,
-                onStopVideoRecording = viewModel::stopVideoRecording,
-                onSwitchCameraLens = viewModel::switchCameraLens,
-                onToggleCameraFlash = viewModel::toggleCameraFlash,
-                onCloseCamera = viewModel::closeCamera,
-                onOpenGallery = viewModel::openGallery,
-                onGalleryMediaPicked = viewModel::onGalleryMediaPicked,
-                onSelectGalleryItem = viewModel::selectGalleryItem,
-                onFindGalleryPhotos = viewModel::findGalleryPhotos,
-                onPrepareGalleryOcr = viewModel::prepareGalleryOcr,
-                onRequestDeleteGalleryItem = viewModel::requestDeleteGalleryItem,
-                onConfirmDeleteGalleryItem = viewModel::confirmDeleteGalleryItem,
-                onCancelDeleteGalleryItem = viewModel::cancelDeleteGalleryItem,
-              )
-            }
-            composable(MAXDestination.MODULES.route) {
-              ModulesArchitectureScreen(uiState = uiState)
-            }
-            composable(MAXDestination.DIAGNOSTICS.route) {
-              DiagnosticsScreen(
-                uiState = uiState,
-                onSetLogFilter = viewModel::setLogFilter,
-                onRunSelfCheck = viewModel::runSelfCheck,
-                onClearLogs = viewModel::clearLogs,
-                onAddMemoryNote = viewModel::addMemoryNote,
-                onDeleteMemoryById = viewModel::deleteMemoryById,
-                onClearMemories = viewModel::clearMemories,
-                onSetAllowSensitiveMemory = viewModel::setAllowSensitiveMemory,
-                onRunBanglaMemoryCommand = { cmd -> viewModel.sendConversationalMessage(cmd, true) },
-                onSetPermissionAllowedByUser = viewModel::setPermissionAllowedByUser,
-              )
-            }
-            composable(MAXDestination.SETTINGS.route) {
-              SettingsScreen(
-                uiState = uiState,
-                onSetWakeWordEnabled = viewModel::setWakeWordEnabled,
-                onSetWakeWordSensitivity = viewModel::setWakeWordSensitivity,
-                onSetLowPowerStandbyMode = viewModel::setLowPowerStandbyMode,
-                onSetVoiceLanguage = viewModel::setVoiceLanguage,
-                onSetSpeechStyle = viewModel::setSpeechStyle,
-                onSetTtsSpeechRate = viewModel::setTtsSpeechRate,
-                onSetTtsPitch = viewModel::setTtsPitch,
-                onSetMemoryRetentionEnabled = viewModel::setMemoryRetentionEnabled,
-                onSetDarkThemePreferred = viewModel::setDarkThemePreferred,
-                onCheckForUpdates = viewModel::checkForUpdates,
-                onOpenReleasePage = { url -> viewModel.openVerifiedUpdateUrl(url) },
-                onToggleFloatingBubble = {
-                  if (uiState.floatingState is FloatingState.Inactive) {
-                    viewModel.activateFloatingBubble(preferSystemOverlay = false)
-                  } else {
-                    viewModel.closeFloatingBubble()
-                  }
-                },
-                onRequestOverlayPermission = { viewModel.requestOverlayPermissionSettings() },
-              )
-            }
-          }
-        }
-      }
-
-      // Floating Assistant Bubble Overlay (shown strictly when activated by the user)
-      if (uiState.floatingState is FloatingState.MinimizedBubble ||
-        uiState.floatingState is FloatingState.ExpandedQuickPanel
-      ) {
-        Box(
-          modifier = Modifier.fillMaxSize().padding(end = 16.dp, bottom = 92.dp),
-          contentAlignment = Alignment.BottomEnd,
-        ) {
-          AnimatedContent(
-            targetState = uiState.floatingState is FloatingState.ExpandedQuickPanel,
-            label = "floating_max_bubble",
-          ) { expanded ->
-            if (!expanded) {
-              Surface(
-                onClick = { viewModel.expandFloatingBubble(false) },
-                shape = CircleShape,
-                color = Color.Transparent,
-                modifier = Modifier.size(58.dp).shadow(8.dp, CircleShape).testTag("floating_bubble_minimized"),
+              },
+              colors =
+                TopAppBarDefaults.centerAlignedTopAppBarColors(
+                  containerColor = frostedChromeColor.copy(alpha = 0.45f),
+                ),
+            )
+          },
+          bottomBar = {
+            if (!useNavRail) {
+              NavigationBar(
+                containerColor = frostedChromeColor,
+                tonalElevation = 0.dp,
               ) {
-                Box(
-                  modifier =
-                    Modifier.fillMaxSize()
-                      .background(Brush.linearGradient(listOf(GradientRoyalBlue, GradientElectricPurple))),
-                  contentAlignment = Alignment.Center,
-                ) {
-                  Icon(
-                    imageVector = Icons.Filled.Mic,
-                    contentDescription = "Expand Floating MAX Assistant",
-                    tint = Color.White,
+                MAXDestination.entries.forEach { destination ->
+                  val selected = currentRoute == destination.route
+                  NavigationBarItem(
+                    selected = selected,
+                    onClick = {
+                      navController.navigate(destination.route) {
+                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                      }
+                    },
+                    icon = {
+                      Icon(
+                        imageVector = if (selected) destination.selectedIcon else destination.unselectedIcon,
+                        contentDescription = destination.label,
+                      )
+                    },
+                    label = { Text(destination.label) },
+                    modifier = Modifier.testTag(destination.testTag),
                   )
                 }
               }
-            } else {
-              Card(
-                shape = RoundedCornerShape(22.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                modifier = Modifier.testTag("floating_bubble_expanded"),
-              ) {
-                Row(
-                  modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                  horizontalArrangement = Arrangement.spacedBy(6.dp),
-                  verticalAlignment = Alignment.CenterVertically,
-                ) {
-                  FilledTonalIconButton(
-                    onClick = { viewModel.triggerFloatingQuickVoice() },
-                    modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp).testTag("floating_quick_voice_btn"),
-                  ) {
-                    Icon(Icons.Filled.Mic, contentDescription = "Quick Voice Activation")
-                  }
-                  IconButton(
+            }
+          },
+        ) { innerPadding ->
+          Row(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+            if (useNavRail) {
+              NavigationRail(containerColor = frostedChromeColor) {
+                MAXDestination.entries.forEach { destination ->
+                  val selected = currentRoute == destination.route
+                  NavigationRailItem(
+                    selected = selected,
                     onClick = {
-                      navController.navigate(MAXDestination.CORE.route) { launchSingleTop = true }
-                      viewModel.minimizeFloatingBubble()
+                      navController.navigate(destination.route) {
+                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                      }
                     },
-                    modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+                    icon = {
+                      Icon(
+                        imageVector = if (selected) destination.selectedIcon else destination.unselectedIcon,
+                        contentDescription = destination.label,
+                      )
+                    },
+                    label = { Text(destination.label) },
+                    modifier = Modifier.testTag(destination.testTag),
+                  )
+                }
+              }
+            }
+
+            NavHost(
+              navController = navController,
+              startDestination = MAXDestination.HOME.route,
+              modifier = Modifier.fillMaxSize(),
+              enterTransition = { fadeIn(animationSpec = tween(220)) },
+              exitTransition = { fadeOut(animationSpec = tween(180)) },
+              popEnterTransition = { fadeIn(animationSpec = tween(220)) },
+              popExitTransition = { fadeOut(animationSpec = tween(180)) },
+            ) {
+              composable(MAXDestination.HOME.route) {
+                CoreDashboardScreen(
+                  uiState = uiState,
+                  onArmWakeWordStandby = viewModel::armWakeWordStandby,
+                  onDisarmWakeWordStandby = viewModel::disarmWakeWordStandby,
+                  onSimulateWakeWordMax = viewModel::simulateWakeWordMax,
+                  onReturnToStandby = viewModel::returnToStandby,
+                  onRequestWakeWordPermissionWithExplanation =
+                    viewModel::requestWakeWordPermissionWithExplanation,
+                  onSendConversationalMessage = viewModel::sendConversationalMessage,
+                  onSelectEmotion = viewModel::selectEmotion,
+                  onSpeakText = viewModel::speakText,
+                  onPauseSpeaking = viewModel::pauseSpeaking,
+                  onResumeSpeaking = viewModel::resumeSpeaking,
+                  onStopSpeaking = viewModel::stopSpeaking,
+                  onSelectLanguage = viewModel::setVoiceLanguage,
+                  onSelectStyle = viewModel::setSpeechStyle,
+                  onActivateManualVoiceSession = viewModel::activateManualVoiceSession,
+                  onFinishFollowUpToWakeMode = viewModel::finishFollowUpToWakeMode,
+                  onOpenCameraQuick = { navController.navigate(ROUTE_VISION) },
+                  onOpenGalleryQuick = { navController.navigate(ROUTE_VISION) },
+                  onOpenInternetScreen = { navController.navigate(ROUTE_INTERNET) },
+                  onOpenPhoneScreen = { navController.navigate(ROUTE_PHONE) },
+                  onOpenWhatsAppQuick = {
+                    viewModel.requestOpenApp(SupportedApp.WHATSAPP, requireConfirmation = true)
+                  },
+                  onOpenAppsScreen = { navController.navigate(ROUTE_APPS) },
+                  onOpenFilesSmartScreen = { navController.navigate(ROUTE_FILES_SMART) },
+                  onOpenSettingsQuick = {
+                    navController.navigate(MAXDestination.SETTINGS.route) {
+                      popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                      launchSingleTop = true
+                      restoreState = true
+                    }
+                  },
+                  onRunRoutine = viewModel::runRoutine,
+                  onToggleFloatingBubble = {
+                    if (uiState.floatingState is FloatingState.Inactive) {
+                      viewModel.activateFloatingBubble(preferSystemOverlay = false)
+                    } else {
+                      viewModel.closeFloatingBubble()
+                    }
+                  },
+                )
+              }
+              composable(MAXDestination.CHAT.route) {
+                ChatScreen(
+                  uiState = uiState,
+                  onSendMessage = viewModel::sendConversationalMessage,
+                  onActivateVoice = viewModel::activateManualVoiceSession,
+                  onRequestMicPermission = viewModel::requestWakeWordPermissionWithExplanation,
+                  onSpeakText = viewModel::speakText,
+                  onStopSpeaking = viewModel::stopSpeaking,
+                  onSelectLanguage = viewModel::setVoiceLanguage,
+                )
+              }
+              composable(MAXDestination.HISTORY.route) {
+                HistoryScreen(
+                  uiState = uiState,
+                  onDeleteMemoryById = viewModel::deleteMemoryById,
+                  onClearMemories = viewModel::clearMemories,
+                  onOpenVisionScreen = { navController.navigate(ROUTE_VISION) },
+                  onOpenModulesScreen = { navController.navigate(ROUTE_MODULES) },
+                  onOpenDiagnosticsScreen = { navController.navigate(ROUTE_DIAGNOSTICS) },
+                  onOpenInternetScreen = { navController.navigate(ROUTE_INTERNET) },
+                  onOpenPhoneScreen = { navController.navigate(ROUTE_PHONE) },
+                  onOpenAppsScreen = { navController.navigate(ROUTE_APPS) },
+                  onOpenFilesSmartScreen = { navController.navigate(ROUTE_FILES_SMART) },
+                )
+              }
+              composable(MAXDestination.SETTINGS.route) {
+                SettingsScreen(
+                  uiState = uiState,
+                  onSetWakeWordEnabled = viewModel::setWakeWordEnabled,
+                  onSetWakeWordSensitivity = viewModel::setWakeWordSensitivity,
+                  onSetLowPowerStandbyMode = viewModel::setLowPowerStandbyMode,
+                  onSetVoiceLanguage = viewModel::setVoiceLanguage,
+                  onSetSpeechStyle = viewModel::setSpeechStyle,
+                  onSetTtsSpeechRate = viewModel::setTtsSpeechRate,
+                  onSetTtsPitch = viewModel::setTtsPitch,
+                  onSetMemoryRetentionEnabled = viewModel::setMemoryRetentionEnabled,
+                  onSetDarkThemePreferred = viewModel::setDarkThemePreferred,
+                  onCheckForUpdates = viewModel::checkForUpdates,
+                  onOpenReleasePage = { url -> viewModel.openVerifiedUpdateUrl(url) },
+                  onToggleFloatingBubble = {
+                    if (uiState.floatingState is FloatingState.Inactive) {
+                      viewModel.activateFloatingBubble(preferSystemOverlay = false)
+                    } else {
+                      viewModel.closeFloatingBubble()
+                    }
+                  },
+                  onRequestOverlayPermission = { viewModel.requestOverlayPermissionSettings() },
+                )
+              }
+              composable(ROUTE_FILES_SMART) {
+                FilesAndSmartScreen(
+                  uiState = uiState,
+                  onBack = { navController.popBackStack() },
+                  onRequestOpenFilePicker = viewModel::requestOpenFilePicker,
+                  onFilesPicked = viewModel::onFilesPicked,
+                  onFilterFiles = viewModel::filterSessionFiles,
+                  onOpenAndReadFile = viewModel::openAndReadFile,
+                  onRunOcrOnFile = viewModel::runOcrOnFile,
+                  onRequestDeleteFile = viewModel::requestDeleteFileItem,
+                  onTranslateText = viewModel::translateSmartText,
+                  onScheduleReminder = viewModel::scheduleReminder,
+                  onToggleReminderCompleted = viewModel::toggleReminderCompleted,
+                  onDeleteReminder = viewModel::deleteReminder,
+                  onAddNote = viewModel::addSmartNote,
+                  onDeleteNote = viewModel::deleteSmartNote,
+                  onLoadTodayCalendar = viewModel::loadTodayCalendar,
+                  onOpenSystemCalendarInsert = viewModel::openSystemCalendarInsert,
+                  onSaveVoiceNote = viewModel::saveVoiceNoteTranscript,
+                  onDeleteVoiceNote = viewModel::deleteVoiceNote,
+                  onRefreshSuggestions = viewModel::refreshAiSuggestions,
+                  onRunVoiceCommand = { cmd -> viewModel.sendConversationalMessage(cmd, true) },
+                  onSpeakText = { txt -> viewModel.speakText(txt, null) },
+                )
+              }
+              composable(ROUTE_APPS) {
+                AppsControlScreen(
+                  uiState = uiState,
+                  onBack = { navController.popBackStack() },
+                  onRefreshAvailability = viewModel::refreshAppAvailability,
+                  onRequestOpenApp = { app -> viewModel.requestOpenApp(app, requireConfirmation = true) },
+                  onRequestOpenAlternative = viewModel::requestOpenAppAlternative,
+                  onRequestWhatsAppDraft = viewModel::requestWhatsAppDraft,
+                  onRequestGmailDraft = viewModel::requestGmailDraft,
+                  onRequestMapsSearch = viewModel::requestMapsSearch,
+                  onRequestChromeUrl = viewModel::requestChromeUrl,
+                  onRequestYouTubeSearch = viewModel::requestYouTubeSearch,
+                  onRunVoiceCommand = { cmd -> viewModel.sendConversationalMessage(cmd, true) },
+                )
+              }
+              composable(ROUTE_PHONE) {
+                PhoneControlScreen(
+                  uiState = uiState,
+                  onBack = { navController.popBackStack() },
+                  onRequestCall = viewModel::requestPhoneCall,
+                  onRequestSms = viewModel::requestSms,
+                  onSearchContacts = viewModel::searchPhoneContacts,
+                  onSystemContactPicked = viewModel::onSystemContactPicked,
+                  onRequestAddOrEditContact = viewModel::requestAddOrEditContact,
+                  onRequestSetAlarm = viewModel::requestSetAlarm,
+                  onOpenSystemAlarms = viewModel::openSystemAlarms,
+                  onStartTimer = viewModel::startTimer,
+                  onPauseTimer = viewModel::pauseTimer,
+                  onResumeTimer = viewModel::resumeTimer,
+                  onResetTimer = viewModel::resetTimer,
+                  onStartStopwatch = viewModel::startStopwatch,
+                  onPauseStopwatch = viewModel::pauseStopwatch,
+                  onLapStopwatch = viewModel::lapStopwatch,
+                  onResetStopwatch = viewModel::resetStopwatch,
+                  onCalculateMath = viewModel::calculateMath,
+                  onRequestToggleFlashlight = viewModel::requestToggleFlashlight,
+                  onReleasePhoneResources = viewModel::releasePhoneTaskResources,
+                )
+              }
+              composable(ROUTE_INTERNET) {
+                InternetScreen(
+                  uiState = uiState,
+                  onBack = { navController.popBackStack() },
+                  onSearchInternet = viewModel::searchInternet,
+                  onOpenWebsite = viewModel::openWebsite,
+                  onSummarizeWebContent = viewModel::summarizeWebContent,
+                  onOpenExternalVerifiedUrl = viewModel::openExternalVerifiedUrl,
+                  onCancelInternetRequest = viewModel::cancelInternetRequest,
+                  onCloseBrowserSession = viewModel::closeBrowserSession,
+                  onRefreshConnection = viewModel::refreshConnectionQuality,
+                  onRunVoiceCommand = { cmd -> viewModel.sendConversationalMessage(cmd, true) },
+                  onSpeakText = viewModel::speakText,
+                  onStopSpeaking = viewModel::stopSpeaking,
+                )
+              }
+              composable(ROUTE_VISION) {
+                VisionScreen(
+                  uiState = uiState,
+                  onOpenCamera = viewModel::openCamera,
+                  onBindCameraXSession = viewModel::bindCameraXSession,
+                  onCapturePhoto = viewModel::capturePhoto,
+                  onStartVideoRecording = viewModel::startVideoRecording,
+                  onStopVideoRecording = viewModel::stopVideoRecording,
+                  onSwitchCameraLens = viewModel::switchCameraLens,
+                  onToggleCameraFlash = viewModel::toggleCameraFlash,
+                  onCloseCamera = viewModel::closeCamera,
+                  onOpenGallery = viewModel::openGallery,
+                  onGalleryMediaPicked = viewModel::onGalleryMediaPicked,
+                  onSelectGalleryItem = viewModel::selectGalleryItem,
+                  onFindGalleryPhotos = viewModel::findGalleryPhotos,
+                  onPrepareGalleryOcr = viewModel::prepareGalleryOcr,
+                  onRequestDeleteGalleryItem = viewModel::requestDeleteGalleryItem,
+                  onConfirmDeleteGalleryItem = viewModel::confirmDeleteGalleryItem,
+                  onCancelDeleteGalleryItem = viewModel::cancelDeleteGalleryItem,
+                )
+              }
+              composable(ROUTE_MODULES) {
+                ModulesArchitectureScreen(uiState = uiState)
+              }
+              composable(ROUTE_DIAGNOSTICS) {
+                DiagnosticsScreen(
+                  uiState = uiState,
+                  onSetLogFilter = viewModel::setLogFilter,
+                  onRunSelfCheck = viewModel::runSelfCheck,
+                  onClearLogs = viewModel::clearLogs,
+                  onAddMemoryNote = viewModel::addMemoryNote,
+                  onDeleteMemoryById = viewModel::deleteMemoryById,
+                  onClearMemories = viewModel::clearMemories,
+                  onSetAllowSensitiveMemory = viewModel::setAllowSensitiveMemory,
+                  onRunBanglaMemoryCommand = { cmd -> viewModel.sendConversationalMessage(cmd, true) },
+                  onSetPermissionAllowedByUser = viewModel::setPermissionAllowedByUser,
+                )
+              }
+            }
+          }
+        }
+
+        // Floating Assistant Bubble Overlay (shown strictly when activated by the user)
+        if (uiState.floatingState is FloatingState.MinimizedBubble ||
+          uiState.floatingState is FloatingState.ExpandedQuickPanel
+        ) {
+          Box(
+            modifier = Modifier.fillMaxSize().padding(end = 16.dp, bottom = 92.dp),
+            contentAlignment = Alignment.BottomEnd,
+          ) {
+            AnimatedContent(
+              targetState = uiState.floatingState is FloatingState.ExpandedQuickPanel,
+              label = "floating_max_bubble",
+            ) { expanded ->
+              if (!expanded) {
+                Surface(
+                  onClick = { viewModel.expandFloatingBubble(false) },
+                  shape = CircleShape,
+                  color = Color.Transparent,
+                  modifier = Modifier.size(58.dp).shadow(8.dp, CircleShape).testTag("floating_bubble_minimized"),
+                ) {
+                  Box(
+                    modifier =
+                      Modifier.fillMaxSize()
+                        .background(Brush.linearGradient(listOf(GradientRoyalBlue, GradientElectricPurple))),
+                    contentAlignment = Alignment.Center,
                   ) {
-                    Icon(Icons.Filled.OpenInFull, contentDescription = "Restore Home")
+                    Icon(
+                      imageVector = Icons.Filled.Mic,
+                      contentDescription = "Expand Floating MAX Assistant",
+                      tint = Color.White,
+                    )
                   }
-                  IconButton(
-                    onClick = { viewModel.minimizeFloatingBubble() },
-                    modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+                }
+              } else {
+                Card(
+                  shape = RoundedCornerShape(22.dp),
+                  colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                  elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                  modifier = Modifier.testTag("floating_bubble_expanded"),
+                ) {
+                  Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                   ) {
-                    Icon(Icons.Filled.Minimize, contentDescription = "Minimize Bubble")
-                  }
-                  IconButton(
-                    onClick = { viewModel.closeFloatingBubble() },
-                    modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
-                  ) {
-                    Icon(Icons.Filled.Close, contentDescription = "Close Floating Bubble")
+                    FilledTonalIconButton(
+                      onClick = { viewModel.triggerFloatingQuickVoice() },
+                      modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp).testTag("floating_quick_voice_btn"),
+                    ) {
+                      Icon(Icons.Filled.Mic, contentDescription = "Quick Voice Activation")
+                    }
+                    IconButton(
+                      onClick = {
+                        navController.navigate(MAXDestination.HOME.route) { launchSingleTop = true }
+                        viewModel.minimizeFloatingBubble()
+                      },
+                      modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+                    ) {
+                      Icon(Icons.Filled.OpenInFull, contentDescription = "Restore Home")
+                    }
+                    IconButton(
+                      onClick = { viewModel.minimizeFloatingBubble() },
+                      modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+                    ) {
+                      Icon(Icons.Filled.Minimize, contentDescription = "Minimize Bubble")
+                    }
+                    IconButton(
+                      onClick = { viewModel.closeFloatingBubble() },
+                      modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+                    ) {
+                      Icon(Icons.Filled.Close, contentDescription = "Close Floating Bubble")
+                    }
                   }
                 }
               }

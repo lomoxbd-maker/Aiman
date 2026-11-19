@@ -2,20 +2,12 @@ package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -66,11 +58,10 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -90,27 +81,28 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.automation.RoutineCategory
 import com.example.core.CoreLifecycleState
 import com.example.emotion.EmotionType
+import com.example.floating.FloatingState
+import com.example.internet.SearchCategory
 import com.example.permissions.AppPermission
 import com.example.permissions.PermissionStatus
 import com.example.speech.SpeechState
 import com.example.tts.SpeechStyle
 import com.example.tts.VoiceLanguage
 import com.example.tts.VoiceState
+import com.example.ui.components.AIOrbVisualState
 import com.example.ui.components.DormantChip
+import com.example.ui.components.FuturisticAIOrb
+import com.example.ui.components.MAXGlassCard
 import com.example.ui.components.PrivacyShieldBanner
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.SubsystemMetricCard
@@ -168,7 +160,7 @@ fun CoreDashboardScreen(
   onOpenAppsScreen: () -> Unit = {},
   onOpenFilesSmartScreen: () -> Unit = {},
   onOpenSettingsQuick: () -> Unit = {},
-  onRunRoutine: (com.example.automation.RoutineCategory) -> Unit = {},
+  onRunRoutine: (RoutineCategory) -> Unit = {},
   onToggleFloatingBubble: () -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
@@ -191,7 +183,7 @@ fun CoreDashboardScreen(
   var moodInput by remember { mutableStateOf("") }
   var showVoiceLabExpanded by remember { mutableStateOf(false) }
 
-  // Battery-conscious clock updater (refreshes every 15 seconds while visible)
+  // Battery-conscious live clock updater (refreshes cleanly every 15s while visible)
   var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
   LaunchedEffect(Unit) {
     while (true) {
@@ -202,6 +194,21 @@ fun CoreDashboardScreen(
 
   val lowPowerMotion =
     uiState.settings.lowPowerStandbyMode || (uiState.compatibility?.isPowerSaveMode == true)
+
+  val weatherResultItem =
+    remember(uiState.searchResults) {
+      uiState.searchResults.firstOrNull { it.category == SearchCategory.WEATHER }
+    }
+  val weatherSummaryText =
+    remember(uiState.searchCategory, uiState.lastWebSummary, weatherResultItem) {
+      when {
+        weatherResultItem != null ->
+          weatherResultItem.snippet.ifBlank { weatherResultItem.title }
+        uiState.searchCategory == SearchCategory.WEATHER && !uiState.lastWebSummary.isNullOrBlank() ->
+          uiState.lastWebSummary
+        else -> null
+      }
+    }
 
   val quickActions =
     remember(
@@ -290,23 +297,26 @@ fun CoreDashboardScreen(
       verticalArrangement = Arrangement.spacedBy(16.dp),
       horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-      // 1. TOP AREA: Premium Logo + Sanju Dynamic Greeting + Time & Date
       item {
         Column(
           modifier = Modifier.fillMaxWidth().widthIn(max = 780.dp),
           verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-          SanjuTopGreetingHeader(
+          // 1. TOP SECTION: Large Premium MAX Logo + Greeting + Live Time & Date + Conditional Weather
+          FuturisticTopSection(
             nowMillis = nowMillis,
             coreState = uiState.coreState,
+            weatherTitle = weatherResultItem?.title,
+            weatherSummary = weatherSummaryText,
+            onOpenWeatherDetails = onOpenInternetScreen,
           )
 
-          // 2. CENTER AREA: Large Circular Animated Mic Button + Status Text
-          CenterVoiceOrbSection(
+          // 2. CENTER SECTION: Animated Futuristic AI Orb + Status ("Ready", "Listening...", "Thinking...", "Speaking...")
+          FuturisticOrbCenterSection(
             uiState = uiState,
             hasAudioPermission = hasAudioPermission,
             lowPowerMotion = lowPowerMotion,
-            onMicTapped = {
+            onOrbTapped = {
               if (!hasAudioPermission) {
                 onRequestWakeWordPermissionWithExplanation()
               } else {
@@ -328,7 +338,7 @@ fun CoreDashboardScreen(
             onRequestPermission = onRequestWakeWordPermissionWithExplanation,
           )
 
-          // 3. QUICK ACTION CARDS (Camera, Gallery, Browser, Phone, WhatsApp, Notes, Reminder, Settings)
+          // 3. QUICK ACTIONS: Rounded (24.dp) glass cards
           SectionHeader(
             title = "Quick Actions",
             trailingBadge = "Permission Protected",
@@ -337,41 +347,41 @@ fun CoreDashboardScreen(
           FlowRow(
             modifier = Modifier.fillMaxWidth(),
             maxItemsInEachRow = if (isWide) 4 else 2,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
           ) {
             quickActions.forEach { action ->
-              QuickActionTileCard(
+              QuickActionGlassTile(
                 spec = action,
                 modifier = Modifier.weight(1f),
               )
             }
           }
 
-          // Smart Routines (Morning, Night, Daily Briefing) + Floating Bubble Launch
+          // Smart Routines & Floating Overlay Strip
           SectionHeader(
             title = "Smart Routines & Overlay",
-            trailingBadge = if (uiState.floatingState is com.example.floating.FloatingState.Inactive) "Offline Ready" else "Bubble Active",
+            trailingBadge = if (uiState.floatingState is FloatingState.Inactive) "Offline Ready" else "Bubble Active",
           )
 
           LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
               AssistChip(
-                onClick = { onRunRoutine(com.example.automation.RoutineCategory.MORNING) },
+                onClick = { onRunRoutine(RoutineCategory.MORNING) },
                 label = { Text("Morning Routine") },
                 modifier = Modifier.defaultMinSize(minHeight = 48.dp).testTag("routine_morning_chip"),
               )
             }
             item {
               AssistChip(
-                onClick = { onRunRoutine(com.example.automation.RoutineCategory.DAILY_BRIEFING) },
+                onClick = { onRunRoutine(RoutineCategory.DAILY_BRIEFING) },
                 label = { Text("Daily Briefing") },
                 modifier = Modifier.defaultMinSize(minHeight = 48.dp).testTag("routine_briefing_chip"),
               )
             }
             item {
               AssistChip(
-                onClick = { onRunRoutine(com.example.automation.RoutineCategory.NIGHT) },
+                onClick = { onRunRoutine(RoutineCategory.NIGHT) },
                 label = { Text("Night Routine") },
                 modifier = Modifier.defaultMinSize(minHeight = 48.dp).testTag("routine_night_chip"),
               )
@@ -381,7 +391,7 @@ fun CoreDashboardScreen(
                 onClick = onToggleFloatingBubble,
                 label = {
                   Text(
-                    if (uiState.floatingState is com.example.floating.FloatingState.Inactive) {
+                    if (uiState.floatingState is FloatingState.Inactive) {
                       "Floating Bubble"
                     } else {
                       "Hide Bubble"
@@ -393,8 +403,8 @@ fun CoreDashboardScreen(
             }
           }
 
-          // 4. BOTTOM AREA: Last Completed Task + Suggested Actions + Recent Conversations
-          LastCompletedTaskStrip(lastTask = uiState.lastCompletedTask)
+          // 4. RECENT ACTIVITY & SMART SUGGESTIONS
+          LastCompletedTaskGlassStrip(lastTask = uiState.lastCompletedTask)
 
           SuggestedActionsSection(
             uiState = uiState,
@@ -403,7 +413,7 @@ fun CoreDashboardScreen(
             },
           )
 
-          RecentConversationsCard(
+          RecentActivityConversationsCard(
             uiState = uiState,
             moodInput = moodInput,
             onMoodInputChange = { moodInput = it },
@@ -415,7 +425,7 @@ fun CoreDashboardScreen(
             onQuickPrompt = { sample -> onSendConversationalMessage(sample, true) },
           )
 
-          // Collapsible Bangla Voice & TTS Studio + Full Workspace Links (keeps all tools 1-tap away)
+          // Bangla Voice Studio & Dedicated Workspace Links
           BanglaTtsAndWorkspaceCard(
             uiState = uiState,
             voiceDraft = voiceDraft,
@@ -467,17 +477,10 @@ fun CoreDashboardScreen(
             }
           }
 
-          // Dormant Location Privacy Strip + Device Compatibility Note
-          Card(
-            shape = RoundedCornerShape(18.dp),
-            colors =
-              CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-              ),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
-          ) {
+          // Dormant Privacy Strip + Device Compatibility
+          MAXGlassCard(cornerRadius = 24.dp) {
             Row(
-              modifier = Modifier.fillMaxWidth().padding(14.dp),
+              modifier = Modifier.fillMaxWidth().padding(16.dp),
               horizontalArrangement = Arrangement.SpaceBetween,
               verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -492,13 +495,9 @@ fun CoreDashboardScreen(
 
           uiState.compatibility?.let { compat ->
             if (compat.fallbackNotes.isNotEmpty() || compat.isLowRamDevice || compat.isPowerSaveMode) {
-              Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-              ) {
+              MAXGlassCard(cornerRadius = 24.dp, accentColor = GradientCyanGlow) {
                 Column(
-                  modifier = Modifier.fillMaxWidth().padding(14.dp),
+                  modifier = Modifier.fillMaxWidth().padding(16.dp),
                   verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                   Text(
@@ -527,9 +526,12 @@ fun CoreDashboardScreen(
 }
 
 @Composable
-private fun SanjuTopGreetingHeader(
+private fun FuturisticTopSection(
   nowMillis: Long,
   coreState: CoreLifecycleState,
+  weatherTitle: String?,
+  weatherSummary: String?,
+  onOpenWeatherDetails: () -> Unit,
 ) {
   val dateObj = remember(nowMillis) { Date(nowMillis) }
   val timeText =
@@ -544,7 +546,7 @@ private fun SanjuTopGreetingHeader(
     remember(nowMillis) {
       Calendar.getInstance().apply { time = dateObj }.get(Calendar.HOUR_OF_DAY)
     }
-  val timeOfDaySubtitle =
+  val timeOfDayGreeting =
     when (hour) {
       in 5..11 -> "শুভ সকাল • Good Morning"
       in 12..16 -> "শুভ অপরাহ্ন • Good Afternoon"
@@ -552,122 +554,162 @@ private fun SanjuTopGreetingHeader(
       else -> "শান্ত রাত্রি • Peaceful Night"
     }
 
-  Card(
-    modifier = Modifier.fillMaxWidth(),
-    shape = RoundedCornerShape(24.dp),
-    colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-  ) {
-    Box(
-      modifier =
-        Modifier.fillMaxWidth()
-          .background(
-            brush =
-              Brush.linearGradient(
-                colors =
-                  listOf(
-                    GradientRoyalBlue,
-                    GradientElectricPurple,
-                  ),
-              ),
-          )
-          .padding(18.dp),
+  Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    MAXGlassCard(
+      cornerRadius = 24.dp,
+      accentColor = GradientRoyalBlue,
     ) {
-      Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+      Column(
+        modifier = Modifier.fillMaxWidth().padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+      ) {
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.SpaceBetween,
           verticalAlignment = Alignment.CenterVertically,
         ) {
-          // Premium MAX Logo Badge
+          // Large Premium MAX Logo + Brand Identity
           Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
           ) {
             Box(
               modifier =
-                Modifier.size(46.dp)
-                  .clip(CircleShape)
-                  .background(Color.White.copy(alpha = 0.18f))
-                  .border(1.5.dp, Color.White.copy(alpha = 0.55f), CircleShape),
+                Modifier.size(56.dp)
+                  .clip(RoundedCornerShape(18.dp))
+                  .background(
+                    Brush.linearGradient(
+                      colors = listOf(GradientRoyalBlue, GradientElectricPurple),
+                    ),
+                  )
+                  .border(1.5.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(18.dp)),
               contentAlignment = Alignment.Center,
             ) {
               Icon(
                 imageVector = Icons.Filled.AutoAwesome,
-                contentDescription = "MAX Assistant Logo",
+                contentDescription = "MAX AI Logo",
                 tint = Color.White,
-                modifier = Modifier.size(24.dp),
+                modifier = Modifier.size(30.dp),
               )
             }
             Column {
               Text(
                 text = "MAX",
-                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold),
-                color = Color.White,
+                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold),
+                color = MaterialTheme.colorScheme.onSurface,
               )
               Text(
-                text = timeOfDaySubtitle,
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.85f),
+                text = timeOfDayGreeting,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
               )
             }
           }
 
           Surface(
             shape = RoundedCornerShape(50),
-            color = Color.White.copy(alpha = 0.18f),
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
           ) {
             Text(
               text = coreState.name.replace("_", " "),
-              style = MaterialTheme.typography.labelSmall,
-              color = Color.White,
-              modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+              style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+              color = MaterialTheme.colorScheme.primary,
+              modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
             )
           }
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
           Text(
-            text = "আসসালামু আলাইকুম, সানজু",
+            text = "আসসালামু আলাইকুম, সানজু 👋",
             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onSurface,
           )
           Text(
-            text = "Welcome Back, Sanju",
-            style = MaterialTheme.typography.bodyLarge,
-            color = Color.White.copy(alpha = 0.92f),
+            text = "Personal AI Companion • Always Privacy-First",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
         }
 
         Surface(
-          shape = RoundedCornerShape(14.dp),
-          color = Color.Black.copy(alpha = 0.18f),
+          shape = RoundedCornerShape(16.dp),
+          color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.28f),
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
         ) {
           Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
           ) {
             Row(
               verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(6.dp),
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
               Icon(
                 imageVector = Icons.Filled.Schedule,
-                contentDescription = "Current time and date",
-                tint = Color.White,
-                modifier = Modifier.size(16.dp),
+                contentDescription = "Live time",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp),
               )
               Text(
                 text = timeText,
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                color = Color.White,
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface,
               )
             }
             Text(
               text = dateText,
               style = MaterialTheme.typography.labelMedium,
-              color = Color.White.copy(alpha = 0.9f),
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
+        }
+      }
+    }
+
+    // Conditional Weather Summary Card (only rendered when live weather data is available)
+    if (!weatherSummary.isNullOrBlank()) {
+      MAXGlassCard(
+        cornerRadius = 24.dp,
+        accentColor = GradientCyanGlow,
+        onClick = onOpenWeatherDetails,
+        modifier = Modifier.fillMaxWidth().testTag("weather_summary_card"),
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+          Box(
+            modifier =
+              Modifier.size(44.dp)
+                .clip(CircleShape)
+                .background(GradientCyanGlow.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center,
+          ) {
+            Icon(
+              imageVector = Icons.Filled.WbSunny,
+              contentDescription = "Weather summary",
+              tint = GradientCyanGlow,
+              modifier = Modifier.size(22.dp),
+            )
+          }
+          Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+              text = weatherTitle ?: "Weather Summary",
+              style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+              color = MaterialTheme.colorScheme.onSurface,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+              text = weatherSummary,
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 2,
+              overflow = TextOverflow.Ellipsis,
             )
           }
         }
@@ -677,11 +719,11 @@ private fun SanjuTopGreetingHeader(
 }
 
 @Composable
-private fun CenterVoiceOrbSection(
+private fun FuturisticOrbCenterSection(
   uiState: MAXUiState,
   hasAudioPermission: Boolean,
   lowPowerMotion: Boolean,
-  onMicTapped: () -> Unit,
+  onOrbTapped: () -> Unit,
   onArmStandby: () -> Unit,
   onTriggerWakeWord: () -> Unit,
   onReturnToStandby: () -> Unit,
@@ -696,180 +738,92 @@ private fun CenterVoiceOrbSection(
       uiState.speechState == SpeechState.LISTENING_ACTIVE ||
       uiState.speechState == SpeechState.PREPARED_FOR_CONVERSATION
 
+  val orbState =
+    when {
+      isThinking -> AIOrbVisualState.THINKING
+      isSpeaking -> AIOrbVisualState.SPEAKING
+      isListening -> AIOrbVisualState.LISTENING
+      else -> AIOrbVisualState.READY
+    }
+
   val statusLabel =
-    when {
-      isThinking -> "Thinking..."
-      isSpeaking -> "Speaking..."
-      isListening -> "Listening..."
-      else -> "Waiting..."
+    when (orbState) {
+      AIOrbVisualState.THINKING -> "Thinking..."
+      AIOrbVisualState.SPEAKING -> "Speaking..."
+      AIOrbVisualState.LISTENING -> "Listening..."
+      AIOrbVisualState.READY -> "Ready"
     }
 
-  val statusHint =
-    when {
-      isThinking -> "শান্তভাবে আপনার উত্তর প্রস্তুত করছি..."
-      isSpeaking -> "MAX সুন্দর ও স্পষ্ট কণ্ঠে কথা বলছে..."
-      isListening -> "বলুন সানজু, আমি মনোযোগ দিয়ে শুনছি"
-      uiState.wakeWordState is WakeWordState.StandbyListening -> "Say \"MAX\" or tap the microphone"
-      else -> "Tap mic to speak or arm \"MAX\" wake standby"
-    }
-
-  val infiniteTransition = rememberInfiniteTransition(label = "voice_orb")
-  val glowScale by
-    infiniteTransition.animateFloat(
-      initialValue = 1.0f,
-      targetValue = if (isSpeaking) 1.24f else if (isListening) 1.18f else 1.06f,
-      animationSpec =
-        infiniteRepeatable(
-          animation =
-            tween(
-              durationMillis = if (lowPowerMotion) 2200 else if (isSpeaking) 900 else 1500,
-              easing = FastOutSlowInEasing,
-            ),
-          repeatMode = RepeatMode.Reverse,
-        ),
-      label = "orb_glow_scale",
-    )
-
-  val floatOffset by
-    infiniteTransition.animateFloat(
-      initialValue = -3f,
-      targetValue = 3f,
-      animationSpec =
-        infiniteRepeatable(
-          animation = tween(durationMillis = 2400, easing = FastOutSlowInEasing),
-          repeatMode = RepeatMode.Reverse,
-        ),
-      label = "orb_float",
-    )
-
-  val orbAccent by
+  val statusAccent by
     animateColorAsState(
       targetValue =
-        when {
-          isSpeaking -> GradientElectricPurple
-          isListening -> GradientCyanGlow
-          isThinking -> AmberStandby
-          else -> GradientRoyalBlue
+        when (orbState) {
+          AIOrbVisualState.READY -> GradientRoyalBlue
+          AIOrbVisualState.LISTENING -> GradientCyanGlow
+          AIOrbVisualState.THINKING -> AmberStandby
+          AIOrbVisualState.SPEAKING -> GradientElectricPurple
         },
-      label = "orb_accent_color",
+      animationSpec = tween(durationMillis = 320),
+      label = "orb_status_accent",
     )
 
-  val interactionSource = remember { MutableInteractionSource() }
-  val isPressed by interactionSource.collectIsPressedAsState()
-  val pressScale by animateFloatAsState(
-    targetValue = if (isPressed) 0.93f else 1.0f,
-    label = "mic_press_scale",
-  )
+  val statusHint =
+    when (orbState) {
+      AIOrbVisualState.THINKING -> "শান্তভাবে আপনার উত্তর প্রস্তুত করছি..."
+      AIOrbVisualState.SPEAKING -> "MAX সুন্দর ও স্পষ্ট কণ্ঠে কথা বলছে..."
+      AIOrbVisualState.LISTENING -> "বলুন সানজু, আমি মনোযোগ দিয়ে শুনছি"
+      AIOrbVisualState.READY ->
+        if (uiState.wakeWordState is WakeWordState.StandbyListening) {
+          "Say \"MAX\" or tap the AI Orb"
+        } else {
+          "Tap the AI Orb to speak or arm \"MAX\""
+        }
+    }
 
-  Card(
+  MAXGlassCard(
+    cornerRadius = 24.dp,
+    accentColor = statusAccent,
     modifier = Modifier.fillMaxWidth(),
-    shape = RoundedCornerShape(24.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    border = BorderStroke(1.dp, orbAccent.copy(alpha = 0.45f)),
-    elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
   ) {
     Column(
-      modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 20.dp),
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 22.dp),
       horizontalAlignment = Alignment.CenterHorizontally,
       verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-      // Animated Circular Microphone Button
-      Box(
-        modifier =
-          Modifier.size(148.dp)
-            .graphicsLayer {
-              translationY = if (lowPowerMotion) 0f else floatOffset
-            },
-        contentAlignment = Alignment.Center,
+      // Animated Futuristic AI Orb
+      FuturisticAIOrb(
+        orbState = orbState,
+        lowPowerMotion = lowPowerMotion,
+        onClick = onOrbTapped,
+        modifier = Modifier.testTag("home_mic_orb_button"),
+      )
+
+      // Status Pill & Text below the Orb
+      Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
       ) {
-        // Outer Listening Glow Ring
-        Box(
-          modifier =
-            Modifier.size(134.dp)
-              .scale(glowScale)
-              .clip(CircleShape)
-              .background(
-                Brush.radialGradient(
-                  colors =
-                    listOf(
-                      orbAccent.copy(alpha = if (isListening || isSpeaking) 0.34f else 0.14f),
-                      Color.Transparent,
-                    ),
-                ),
-              ),
-        )
-
-        // Middle Ripple Ring
-        Box(
-          modifier =
-            Modifier.size(112.dp)
-              .scale(if (isSpeaking || isListening) (glowScale * 0.96f) else 1f)
-              .clip(CircleShape)
-              .border(
-                width = if (isSpeaking || isListening) 2.dp else 1.dp,
-                color = orbAccent.copy(alpha = 0.55f),
-                shape = CircleShape,
-              ),
-        )
-
-        // Interactive 94dp Primary Mic Circle (>48dp touch target)
         Surface(
-          onClick = onMicTapped,
-          interactionSource = interactionSource,
-          shape = CircleShape,
-          modifier =
-            Modifier.size(94.dp)
-              .scale(pressScale)
-              .shadow(
-                elevation = if (isListening || isSpeaking) 12.dp else 6.dp,
-                shape = CircleShape,
-                ambientColor = orbAccent,
-                spotColor = orbAccent,
-              )
-              .semantics { contentDescription = "MAX Microphone Button: $statusLabel" }
-              .testTag("home_mic_orb_button"),
-          color = Color.Transparent,
+          shape = RoundedCornerShape(50),
+          color = statusAccent.copy(alpha = 0.14f),
+          border = BorderStroke(1.dp, statusAccent.copy(alpha = 0.35f)),
         ) {
-          Box(
-            modifier =
-              Modifier.fillMaxSize()
-                .background(
-                  Brush.linearGradient(
-                    colors =
-                      when {
-                        isSpeaking -> listOf(GradientElectricPurple, GradientRoyalBlue)
-                        isListening -> listOf(GradientRoyalBlue, GradientCyanGlow)
-                        else -> listOf(GradientRoyalBlue, GradientElectricPurple)
-                      },
-                  ),
-                ),
-            contentAlignment = Alignment.Center,
+          Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
           ) {
-            Icon(
-              imageVector =
-                when {
-                  isSpeaking -> Icons.Filled.GraphicEq
-                  isListening -> Icons.Filled.Mic
-                  else -> Icons.Filled.Mic
-                },
-              contentDescription = null,
-              tint = Color.White,
-              modifier = Modifier.size(38.dp),
+            Box(
+              modifier = Modifier.size(8.dp).clip(CircleShape).background(statusAccent),
+            )
+            Text(
+              text = statusLabel,
+              style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+              color = statusAccent,
+              modifier = Modifier.testTag("home_orb_status_text"),
             )
           }
         }
-      }
-
-      Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-      ) {
-        Text(
-          text = statusLabel,
-          style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-          color = orbAccent,
-          modifier = Modifier.testTag("home_orb_status_text"),
-        )
         Text(
           text = statusHint,
           style = MaterialTheme.typography.bodyMedium,
@@ -884,12 +838,12 @@ private fun CenterVoiceOrbSection(
         exit = fadeOut(),
       ) {
         Surface(
-          shape = RoundedCornerShape(16.dp),
-          color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
-          border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+          shape = RoundedCornerShape(18.dp),
+          color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f),
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)),
         ) {
           Column(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
           ) {
             Text(
@@ -904,7 +858,7 @@ private fun CenterVoiceOrbSection(
               OutlinedButton(
                 onClick = onDismissFollowUp,
                 modifier = Modifier.defaultMinSize(minHeight = 48.dp).testTag("dismiss_followup_button"),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(14.dp),
               ) {
                 Text("না, ধন্যবাদ • Return to Wake Mode")
               }
@@ -913,7 +867,7 @@ private fun CenterVoiceOrbSection(
         }
       }
 
-      // Wake Word Control Pills (Preserves existing standby/trigger tests & flows)
+      // Wake Word Control Pills (Preserves standby/trigger functionality)
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -922,7 +876,7 @@ private fun CenterVoiceOrbSection(
           Button(
             onClick = onReturnToStandby,
             modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp).testTag("return_standby_button"),
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(16.dp),
           ) {
             Icon(Icons.Filled.Refresh, contentDescription = null)
             Spacer(Modifier.width(6.dp))
@@ -933,7 +887,7 @@ private fun CenterVoiceOrbSection(
           Button(
             onClick = onArmStandby,
             modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp).testTag("toggle_wake_standby_button"),
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(16.dp),
             colors =
               if (isStandby) {
                 ButtonDefaults.buttonColors(
@@ -965,7 +919,7 @@ private fun CenterVoiceOrbSection(
         FilledTonalButton(
           onClick = onTriggerWakeWord,
           modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp).testTag("simulate_wake_word_button"),
-          shape = RoundedCornerShape(14.dp),
+          shape = RoundedCornerShape(16.dp),
         ) {
           Icon(Icons.Filled.Bolt, contentDescription = null)
           Spacer(Modifier.width(6.dp))
@@ -977,7 +931,7 @@ private fun CenterVoiceOrbSection(
         OutlinedButton(
           onClick = onRequestPermission,
           modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp).testTag("request_wake_mic_button"),
-          shape = RoundedCornerShape(12.dp),
+          shape = RoundedCornerShape(14.dp),
         ) {
           Text("Grant Microphone Permission (Wake Word Only)")
         }
@@ -987,42 +941,33 @@ private fun CenterVoiceOrbSection(
 }
 
 @Composable
-private fun QuickActionTileCard(
+private fun QuickActionGlassTile(
   spec: QuickActionSpec,
   modifier: Modifier = Modifier,
 ) {
-  val interactionSource = remember { MutableInteractionSource() }
-  val isPressed by interactionSource.collectIsPressedAsState()
-  val scale by animateFloatAsState(
-    targetValue = if (isPressed) 0.96f else 1.0f,
-    label = "quick_action_press_scale",
-  )
-  Card(
+  MAXGlassCard(
     onClick = spec.onClick,
-    interactionSource = interactionSource,
-    modifier = modifier.scale(scale).widthIn(min = 132.dp).defaultMinSize(minHeight = 80.dp).testTag(spec.testTag),
-    shape = RoundedCornerShape(18.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)),
-    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    cornerRadius = 24.dp,
+    accentColor = spec.tint,
+    modifier = modifier.widthIn(min = 132.dp).defaultMinSize(minHeight = 84.dp).testTag(spec.testTag),
   ) {
     Row(
-      modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 14.dp),
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 16.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       Box(
         modifier =
-          Modifier.size(40.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(spec.tint.copy(alpha = 0.15f)),
+          Modifier.size(44.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(spec.tint.copy(alpha = 0.16f)),
         contentAlignment = Alignment.Center,
       ) {
         Icon(
           imageVector = spec.icon,
           contentDescription = spec.title,
           tint = spec.tint,
-          modifier = Modifier.size(22.dp),
+          modifier = Modifier.size(24.dp),
         )
       }
       Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -1046,23 +991,22 @@ private fun QuickActionTileCard(
 }
 
 @Composable
-private fun LastCompletedTaskStrip(lastTask: String?) {
-  Surface(
+private fun LastCompletedTaskGlassStrip(lastTask: String?) {
+  MAXGlassCard(
+    cornerRadius = 24.dp,
+    accentColor = EmeraldReady,
     modifier = Modifier.fillMaxWidth().testTag("last_completed_task_card"),
-    shape = RoundedCornerShape(16.dp),
-    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)),
   ) {
     Row(
-      modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
       verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(10.dp),
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       Icon(
         imageVector = Icons.Filled.CheckCircle,
         contentDescription = "Last completed task",
         tint = EmeraldReady,
-        modifier = Modifier.size(20.dp),
+        modifier = Modifier.size(22.dp),
       )
       Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(
@@ -1099,18 +1043,14 @@ private fun SuggestedActionsSection(
             } else {
               suggestion.titleBangla
             }
-          Card(
+          MAXGlassCard(
             onClick = { onSuggestionClick(suggestion.suggestedActionCommand) },
-            modifier = Modifier.widthIn(min = 180.dp, max = 250.dp).defaultMinSize(minHeight = 64.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors =
-              CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
-              ),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+            cornerRadius = 24.dp,
+            accentColor = GradientRoyalBlue,
+            modifier = Modifier.widthIn(min = 190.dp, max = 260.dp).defaultMinSize(minHeight = 72.dp),
           ) {
             Column(
-              modifier = Modifier.padding(12.dp),
+              modifier = Modifier.padding(14.dp),
               verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
               Text(
@@ -1141,6 +1081,7 @@ private fun SuggestedActionsSection(
           AssistChip(
             onClick = { onSuggestionClick(prompt) },
             label = { Text(prompt) },
+            modifier = Modifier.defaultMinSize(minHeight = 48.dp),
           )
         }
       }
@@ -1149,7 +1090,7 @@ private fun SuggestedActionsSection(
 }
 
 @Composable
-private fun RecentConversationsCard(
+private fun RecentActivityConversationsCard(
   uiState: MAXUiState,
   moodInput: String,
   onMoodInputChange: (String) -> Unit,
@@ -1157,17 +1098,13 @@ private fun RecentConversationsCard(
   onSendMessage: (String) -> Unit,
   onQuickPrompt: (String) -> Unit,
 ) {
-  Card(
-    shape = RoundedCornerShape(20.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-  ) {
+  MAXGlassCard(cornerRadius = 24.dp) {
     Column(
-      modifier = Modifier.fillMaxWidth().padding(16.dp),
+      modifier = Modifier.fillMaxWidth().padding(18.dp),
       verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       SectionHeader(
-        title = "Recent Conversations & Mood",
+        title = "Recent Activity",
         trailingBadge = uiState.emotionState.currentEmotion.displayName,
       )
 
@@ -1216,6 +1153,7 @@ private fun RecentConversationsCard(
           onValueChange = onMoodInputChange,
           placeholder = { Text("Speak or type (Bangla or English)...") },
           singleLine = true,
+          shape = RoundedCornerShape(18.dp),
           modifier = Modifier.weight(1f).testTag("emotion_message_input"),
         )
         Button(
@@ -1224,6 +1162,7 @@ private fun RecentConversationsCard(
               onSendMessage(moodInput)
             }
           },
+          shape = RoundedCornerShape(16.dp),
           modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp).testTag("emotion_send_button"),
         ) {
           Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send message to MAX")
@@ -1236,19 +1175,29 @@ private fun RecentConversationsCard(
             val isMax = turn.speaker == "MAX"
             Surface(
               modifier = Modifier.fillMaxWidth(),
-              shape = RoundedCornerShape(14.dp),
+              shape = RoundedCornerShape(16.dp),
               color =
                 if (isMax) {
                   MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
                 } else {
-                  MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                  MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
                 },
+              border =
+                BorderStroke(
+                  width = 1.dp,
+                  color =
+                    if (isMax) {
+                      MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                    } else {
+                      MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                    },
+                ),
             ) {
               Text(
                 text = "${turn.speaker}: ${turn.content}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
               )
             }
           }
@@ -1276,13 +1225,9 @@ private fun BanglaTtsAndWorkspaceCard(
   onOpenAppsScreen: () -> Unit,
   onOpenFilesSmartScreen: () -> Unit,
 ) {
-  Card(
-    shape = RoundedCornerShape(20.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-  ) {
+  MAXGlassCard(cornerRadius = 24.dp) {
     Column(
-      modifier = Modifier.fillMaxWidth().padding(16.dp),
+      modifier = Modifier.fillMaxWidth().padding(18.dp),
       verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       Row(
@@ -1341,6 +1286,7 @@ private fun BanglaTtsAndWorkspaceCard(
             label = { Text("Bangla / Multilingual Speech Test") },
             minLines = 2,
             maxLines = 3,
+            shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth().testTag("tts_input_field"),
           )
 
@@ -1405,7 +1351,6 @@ private fun BanglaTtsAndWorkspaceCard(
         }
       }
 
-      // Dedicated Workspace Screen Shortcuts (preserving all existing screen buttons & testTags)
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1413,7 +1358,7 @@ private fun BanglaTtsAndWorkspaceCard(
         FilledTonalButton(
           onClick = onOpenInternetScreen,
           modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp).testTag("open_internet_screen_button"),
-          shape = RoundedCornerShape(12.dp),
+          shape = RoundedCornerShape(14.dp),
         ) {
           Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(16.dp))
           Spacer(Modifier.width(4.dp))
@@ -1422,7 +1367,7 @@ private fun BanglaTtsAndWorkspaceCard(
         FilledTonalButton(
           onClick = onOpenPhoneScreen,
           modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp).testTag("open_phone_screen_button"),
-          shape = RoundedCornerShape(12.dp),
+          shape = RoundedCornerShape(14.dp),
         ) {
           Icon(Icons.Filled.PhoneAndroid, contentDescription = null, modifier = Modifier.size(16.dp))
           Spacer(Modifier.width(4.dp))
@@ -1436,7 +1381,7 @@ private fun BanglaTtsAndWorkspaceCard(
         FilledTonalButton(
           onClick = onOpenAppsScreen,
           modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp).testTag("open_apps_screen_button"),
-          shape = RoundedCornerShape(12.dp),
+          shape = RoundedCornerShape(14.dp),
         ) {
           Icon(Icons.Filled.Apps, contentDescription = null, modifier = Modifier.size(16.dp))
           Spacer(Modifier.width(4.dp))
@@ -1445,7 +1390,7 @@ private fun BanglaTtsAndWorkspaceCard(
         FilledTonalButton(
           onClick = onOpenFilesSmartScreen,
           modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp).testTag("open_files_smart_screen_button"),
-          shape = RoundedCornerShape(12.dp),
+          shape = RoundedCornerShape(14.dp),
         ) {
           Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
           Spacer(Modifier.width(4.dp))

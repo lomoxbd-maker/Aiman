@@ -38,3 +38,17 @@ val GradientRoyalBlue = Color(0xFF2563EB)
 val GradientElectricPurple = Color(0xFF7C3AED)
 val GradientCyanGlow = Color(0xFF38BDF8)
 
+// Futuristic Glassmorphism & Backdrop Tokens
+val DarkBackdropTop = Color(0xFF070B18)
+val DarkBackdropMid = Color(0xFF101935)
+val DarkBackdropBottom = Color(0xFF1B123A)
+val DarkGlassSurface = Color(0xFF131D34)
+val DarkGlassBorderStart = Color(0xFF60A5FA)
+val DarkGlassBorderEnd = Color(0xFFA78BFA)
+
+val LightBackdropTop = Color(0xFFEEF4FF)
+val LightBackdropMid = Color(0xFFF1ECFF)
+val LightBackdropBottom = Color(0xFFF8FAFF)
+val LightGlassSurface = Color(0xFFFFFFFF)
+val LightGlassBorderStart = Color(0xFFFFFFFF)
+val LightGlassBorderEnd = Color(0xFF93C5FD)

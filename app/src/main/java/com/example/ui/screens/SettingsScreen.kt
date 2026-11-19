@@ -1,6 +1,5 @@
 package com.example.ui.screens
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -24,8 +23,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import com.example.BuildConfig
 import com.example.update.UpdateState
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -38,6 +35,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.example.tts.SpeechStyle
 import com.example.tts.VoiceLanguage
+import com.example.ui.components.MAXGlassCard
 import com.example.ui.components.SectionHeader
 import com.example.viewmodel.MAXUiState
 
@@ -74,11 +72,7 @@ fun SettingsScreen(
       ) {
         SectionHeader(title = "Wake Word \"MAX\" Settings", trailingBadge = "DataStore")
 
-        Card(
-          shape = RoundedCornerShape(18.dp),
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        ) {
+        MAXGlassCard(cornerRadius = 24.dp) {
           Column(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -123,11 +117,7 @@ fun SettingsScreen(
 
         SectionHeader(title = "Bangla Voice, Style & Memory")
 
-        Card(
-          shape = RoundedCornerShape(18.dp),
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        ) {
+        MAXGlassCard(cornerRadius = 24.dp) {
           Column(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -216,11 +206,7 @@ fun SettingsScreen(
 
         SectionHeader(title = "Release Build & Future Update System", trailingBadge = "v${BuildConfig.VERSION_NAME}")
 
-        Card(
-          shape = RoundedCornerShape(18.dp),
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        ) {
+        MAXGlassCard(cornerRadius = 24.dp) {
           Column(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -287,11 +273,7 @@ fun SettingsScreen(
 
         SectionHeader(title = "Floating Assistant Bubble")
 
-        Card(
-          shape = RoundedCornerShape(18.dp),
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        ) {
+        MAXGlassCard(cornerRadius = 24.dp) {
           Column(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),

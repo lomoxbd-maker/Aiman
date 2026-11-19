@@ -1,20 +1,18 @@
 package com.example.ui.navigation
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Hub
-import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.outlined.Chat
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.outlined.Build
-import androidx.compose.material.icons.outlined.Hub
-import androidx.compose.material.icons.outlined.Memory
-import androidx.compose.material.icons.outlined.PhotoCamera
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.ui.graphics.vector.ImageVector
 
 /**
- * Type-safe destination descriptors for Navigation Compose.
+ * Type-safe destination descriptors for MAX primary bottom navigation.
  */
 enum class MAXDestination(
   val route: String,
@@ -23,33 +21,26 @@ enum class MAXDestination(
   val unselectedIcon: ImageVector,
   val testTag: String,
 ) {
-  CORE(
+  HOME(
     route = "max_core",
-    label = "Core",
-    selectedIcon = Icons.Filled.Memory,
-    unselectedIcon = Icons.Outlined.Memory,
-    testTag = "nav_core",
+    label = "Home",
+    selectedIcon = Icons.Filled.Home,
+    unselectedIcon = Icons.Outlined.Home,
+    testTag = "nav_home",
   ),
-  VISION(
-    route = "max_vision",
-    label = "Vision",
-    selectedIcon = Icons.Filled.PhotoCamera,
-    unselectedIcon = Icons.Outlined.PhotoCamera,
-    testTag = "nav_vision",
+  CHAT(
+    route = "max_chat",
+    label = "Chat",
+    selectedIcon = Icons.AutoMirrored.Filled.Chat,
+    unselectedIcon = Icons.AutoMirrored.Outlined.Chat,
+    testTag = "nav_chat",
   ),
-  MODULES(
-    route = "max_modules",
-    label = "Modules",
-    selectedIcon = Icons.Filled.Hub,
-    unselectedIcon = Icons.Outlined.Hub,
-    testTag = "nav_modules",
-  ),
-  DIAGNOSTICS(
-    route = "max_diagnostics",
-    label = "Diagnostics",
-    selectedIcon = Icons.Filled.Build,
-    unselectedIcon = Icons.Outlined.Build,
-    testTag = "nav_diagnostics",
+  HISTORY(
+    route = "max_history",
+    label = "History",
+    selectedIcon = Icons.Filled.History,
+    unselectedIcon = Icons.Outlined.History,
+    testTag = "nav_history",
   ),
   SETTINGS(
     route = "max_settings",
@@ -59,3 +50,4 @@ enum class MAXDestination(
     testTag = "nav_settings",
   ),
 }
+
