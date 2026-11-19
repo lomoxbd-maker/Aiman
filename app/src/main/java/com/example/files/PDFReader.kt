@@ -3,6 +3,7 @@ package com.example.files
 import android.content.Context
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
+import androidx.core.net.toUri
 import com.example.utils.ErrorTracker
 import java.nio.charset.StandardCharsets
 
@@ -79,9 +80,8 @@ class AndroidPdfReaderBackend(
     internal fun extractReadablePdfStrings(bytes: ByteArray, maxChars: Int): String {
       if (bytes.isEmpty()) return ""
       val raw = String(bytes, StandardCharsets.ISO_8859_1)
-      val regex = Regex("\\(([^()\\\\]{2,240})\\)\\s*(Tj|'|\"|TJ)")
       val out = StringBuilder()
-      regex.findAll(raw).forEach { match ->
+      PDF_LITERAL_REGEX.findAll(raw).forEach { match ->
         val token =
           match.groupValues[1]
             .replace("\\r", " ")
@@ -95,8 +95,11 @@ class AndroidPdfReaderBackend(
           }
         }
       }
-      return out.toString().replace(Regex("\\s+"), " ").trim()
+      return out.toString().replace(WHITESPACE_REGEX, " ").trim()
     }
+
+    private val PDF_LITERAL_REGEX = Regex("\\(([^()\\\\]{2,240})\\)\\s*(Tj|'|\"|TJ)")
+    private val WHITESPACE_REGEX = Regex("\\s+")
   }
 }
 
@@ -110,7 +113,7 @@ class PDFReader(
 ) {
 
   fun readDocument(item: MAXFileItem): Result<ExtractedDocumentContent> {
-    val uri = runCatching { Uri.parse(item.uriString) }.getOrNull()
+    val uri = runCatching { item.uriString.toUri() }.getOrNull()
       ?: return Result.failure(IllegalArgumentException("Invalid PDF URI."))
     val charBudget = if (isLowRamDevice) 8_000 else 20_000
 
@@ -120,7 +123,7 @@ class PDFReader(
         output.extractedText.ifBlank {
           "PDF document '${item.displayName}' has ${output.pageCount} page(s). ${output.note}"
         }
-      val words = text.split(Regex("\\s+")).count { it.isNotBlank() }
+      val words = text.split(WHITESPACE_REGEX).count { it.isNotBlank() }
       errorTracker.logInfo(MODULE_NAME, "Read PDF '${item.displayName}' (${output.pageCount} pages, $words words).")
       ExtractedDocumentContent(
         fileId = item.id,
@@ -138,5 +141,6 @@ class PDFReader(
 
   companion object {
     private const val MODULE_NAME = "PDFReader"
+    private val WHITESPACE_REGEX = Regex("\\s+")
   }
 }

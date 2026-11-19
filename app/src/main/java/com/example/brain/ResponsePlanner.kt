@@ -160,7 +160,7 @@ class ResponsePlanner(
   private fun findRelevantMemoryHint(query: String): String? {
     val tokens =
       query.lowercase()
-        .split(Regex("[\\s,।?!]+"))
+        .split(TOKEN_SPLIT_REGEX)
         .filter { it.length >= 3 }
     if (tokens.isEmpty()) return null
     val memories = memoryController?.memories?.value.orEmpty()
@@ -168,5 +168,9 @@ class ResponsePlanner(
       val contentLower = mem.content.lowercase()
       tokens.any { token -> contentLower.contains(token) }
     }?.content
+  }
+
+  companion object {
+    private val TOKEN_SPLIT_REGEX = Regex("[\\s,।?!]+")
   }
 }

@@ -14,6 +14,12 @@
 
 # Preserve MAX core domain models, state sealed hierarchies, and enum values
 -keep class com.example.core.** { *; }
+-keep class com.example.brain.** { *; }
+-keep class com.example.automation.** { *; }
+-keep class com.example.floating.** { *; }
+-keep class com.example.apps.** { *; }
+-keep class com.example.files.** { *; }
+-keep class com.example.smart.** { *; }
 -keep class com.example.update.** { *; }
 -keep class com.example.settings.** { *; }
 -keep class com.example.memory.** { *; }

@@ -3,7 +3,7 @@ package com.example.files
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.net.Uri
+import androidx.core.net.toUri
 import com.example.utils.ErrorTracker
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.MultiFormatReader
@@ -38,7 +38,7 @@ class OnDeviceOcrBackend(
       return Result.success(item.extractedTextPreview)
     }
 
-    val uri = runCatching { Uri.parse(item.uriString) }.getOrNull()
+    val uri = runCatching { item.uriString.toUri() }.getOrNull()
       ?: return Result.failure(IllegalArgumentException("Invalid URI for OCR."))
 
     var bitmap: Bitmap? = null

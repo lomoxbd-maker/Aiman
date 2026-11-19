@@ -1345,6 +1345,45 @@ class ExampleRobolectricTest {
     assertTrue(floatingMgr.state.value is com.example.floating.FloatingState.Inactive)
   }
 
+  @Test
+  fun `wake word analyzer rejects flat hum and detects crisp vocal bursts while TTS & Memory stay clean`() {
+    val analyzer = com.example.wakeword.BaselineAcousticKeywordAnalyzer()
+    val cfg = WakeWordConfig(sensitivity = 0.75f)
+    val flatHum = ShortArray(320) { 6000 }
+    repeat(10) {
+      assertEquals(0f, analyzer.analyzeFrame(flatHum, flatHum.size, cfg))
+    }
+
+    analyzer.reset()
+    val vocalBurst =
+      ShortArray(320) { idx ->
+        val sign = if ((idx / 10) % 2 == 0) 1 else -1
+        val amp = if (idx % 10 in 2..4) 16000 else 3000
+        (sign * amp).toShort()
+      }
+    var detectedConfidence = 0f
+    repeat(8) {
+      val conf = analyzer.analyzeFrame(vocalBurst, vocalBurst.size, cfg)
+      if (conf > 0f) detectedConfidence = conf
+    }
+    assertTrue(detectedConfidence >= 0.78f)
+
+    val cleanedSpeech =
+      TTSManager.prepareForNaturalSpeech("**হ্যালো** সানজু... আজকে দেখে নিন https://www.example.com/news; আমি পাশে আছি")
+    assertFalse(cleanedSpeech.contains("**"))
+    assertFalse(cleanedSpeech.contains("https://"))
+    assertTrue(cleanedSpeech.contains("example.com"))
+
+    val mem = MemoryManager(ErrorLogger()).apply { initialize(true) }
+    mem.executeCommand(MemoryCommand.Remember("আমার প্রিয় রঙ নীল"))
+    assertEquals(1, mem.memories.value.size)
+    assertEquals(1, mem.entries.value.size)
+    mem.executeCommand(MemoryCommand.Forget("নীল"))
+    assertTrue(mem.memories.value.isEmpty())
+    assertTrue(mem.entries.value.isEmpty())
+    mem.release()
+  }
+
   private fun com.example.phone.StopwatchManager.lapStopwatchProxyTestFix(
     sw: com.example.phone.StopwatchManager,
   ) {

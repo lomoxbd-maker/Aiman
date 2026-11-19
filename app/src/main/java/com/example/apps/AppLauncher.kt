@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import androidx.core.net.toUri
 import com.example.utils.ErrorTracker
 
 /**
@@ -62,7 +63,7 @@ class AndroidAppLaunchBackend(
 
   override fun hasIntentHandler(action: String, uriString: String): Boolean {
     return try {
-      val intent = Intent(action, Uri.parse(uriString))
+      val intent = Intent(action, uriString.toUri())
       intent.resolveActivity(packageManager) != null
     } catch (_: Exception) {
       false
@@ -84,7 +85,7 @@ class AndroidAppLaunchBackend(
     packageHint: String?,
   ): Result<String> {
     val parsed =
-      runCatching { Uri.parse(uriString) }.getOrNull()
+      runCatching { uriString.toUri() }.getOrNull()
         ?: return Result.failure(IllegalArgumentException("Invalid URI format."))
     val intent =
       Intent(action, parsed).apply {
@@ -101,7 +102,7 @@ class AndroidAppLaunchBackend(
     body: String,
     packageHint: String?,
   ): Result<String> {
-    val mailtoUri = Uri.parse("mailto:${Uri.encode(recipientEmail.trim())}")
+    val mailtoUri = "mailto:${Uri.encode(recipientEmail.trim())}".toUri()
     val intent =
       Intent(Intent.ACTION_SENDTO, mailtoUri).apply {
         if (recipientEmail.isNotBlank()) {
@@ -295,7 +296,7 @@ class AppLauncher(
         trimmed.contains(".") && !trimmed.contains(" ") -> "https://$trimmed"
         else -> return null
       }
-    val host = runCatching { Uri.parse(withScheme).host.orEmpty() }.getOrDefault("")
+    val host = runCatching { withScheme.toUri().host.orEmpty() }.getOrDefault("")
     if (host.isBlank() || host == "localhost" || host.startsWith("127.") || host.startsWith("10.")) {
       return null
     }

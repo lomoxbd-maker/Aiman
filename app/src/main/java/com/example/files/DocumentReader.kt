@@ -2,6 +2,7 @@ package com.example.files
 
 import android.content.Context
 import android.net.Uri
+import androidx.core.net.toUri
 import com.example.utils.ErrorTracker
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -68,13 +69,13 @@ class DocumentReader(
 ) {
 
   fun readDocument(item: MAXFileItem): Result<ExtractedDocumentContent> {
-    val uri = runCatching { Uri.parse(item.uriString) }.getOrNull()
+    val uri = runCatching { item.uriString.toUri() }.getOrNull()
       ?: return Result.failure(IllegalArgumentException("Invalid document URI."))
     val maxChars = if (isLowRamDevice) 10_000 else 24_000
 
     return backend.readText(uri, item.mimeType, maxChars).map { text ->
       val finalText = text.ifBlank { "(Empty text document: ${item.displayName})" }
-      val words = finalText.split(Regex("\\s+")).count { it.isNotBlank() }
+      val words = finalText.split(WHITESPACE_REGEX).count { it.isNotBlank() }
       errorTracker.logInfo(MODULE_NAME, "Read document '${item.displayName}' ($words words, read-only).")
       ExtractedDocumentContent(
         fileId = item.id,
@@ -92,5 +93,6 @@ class DocumentReader(
 
   companion object {
     private const val MODULE_NAME = "DocumentReader"
+    private val WHITESPACE_REGEX = Regex("\\s+")
   }
 }

@@ -77,6 +77,8 @@ class TTSManager(
   private var activeEnginePackage: String = "system"
   private var isFallbackVoice: Boolean = false
   private var activeEmotionProfile: com.example.emotion.EmotionalVoiceProfile? = null
+  private var lastAppliedRate: Float = -1f
+  private var lastAppliedPitch: Float = -1f
 
   // Sentence queue retained strictly in memory for pause/resume of current utterance only.
   private var pendingSentences: List<String> = emptyList()
@@ -380,6 +382,8 @@ class TTSManager(
     stopSpeaking()
     runCatching { engine?.shutdown() }
     engine = null
+    lastAppliedRate = -1f
+    lastAppliedPitch = -1f
     _state.value = TTSState.UNINITIALIZED
     _voiceState.value = VoiceState.Uninitialized
   }
@@ -545,9 +549,16 @@ class TTSManager(
     val pitchScale = activeEmotionProfile?.pitchScale ?: 1.0f
     val finalRate = (cfg.effectiveSpeechRate() * rateScale).coerceIn(0.65f, 1.25f)
     val finalPitch = (cfg.effectivePitch() * pitchScale).coerceIn(0.75f, 1.35f)
+    val tts = engine ?: return
     runCatching {
-      engine?.setSpeechRate(finalRate)
-      engine?.setPitch(finalPitch)
+      if (kotlin.math.abs(finalRate - lastAppliedRate) > 0.005f) {
+        tts.setSpeechRate(finalRate)
+        lastAppliedRate = finalRate
+      }
+      if (kotlin.math.abs(finalPitch - lastAppliedPitch) > 0.005f) {
+        tts.setPitch(finalPitch)
+        lastAppliedPitch = finalPitch
+      }
     }
   }
 
@@ -564,6 +575,8 @@ class TTSManager(
     private val SENTENCE_BOUNDARY_REGEX = Regex("(?<=[।.!?\\n])\\s+")
     private val RAW_URL_REGEX = Regex("https?://[^\\s]+")
     private val MARKDOWN_NOISE_REGEX = Regex("[*_`~#]+")
+    private val PAUSE_PUNCTUATION_REGEX = Regex("(\\.{3}|—|•|;)")
+    private val WHITESPACE_REGEX = Regex("\\s+")
 
     fun scoreVoiceNaturalness(
       voice: Voice,
@@ -603,8 +616,8 @@ class TTSManager(
         host?.removePrefix("www.") ?: ""
       }
       cleaned = cleaned.replace(MARKDOWN_NOISE_REGEX, "")
-      cleaned = cleaned.replace("—", ", ").replace("•", ", ")
-      return cleaned.replace(Regex("\\s+"), " ").trim()
+      cleaned = cleaned.replace(PAUSE_PUNCTUATION_REGEX, ", ")
+      return cleaned.replace(WHITESPACE_REGEX, " ").trim()
     }
 
     /**

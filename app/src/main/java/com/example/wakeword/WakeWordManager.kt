@@ -40,6 +40,7 @@ interface WakeWordFrameAnalyzer {
 class BaselineAcousticKeywordAnalyzer : WakeWordFrameAnalyzer {
   private var consecutiveVoiceFrames = 0
   private var cooldownFramesRemaining = 0
+  private var ambientNoiseFloorRms = INITIAL_NOISE_FLOOR
 
   override fun analyzeFrame(pcmFrame: ShortArray, sampleCount: Int, config: WakeWordConfig): Float {
     if (sampleCount <= 0) return 0f
@@ -49,10 +50,13 @@ class BaselineAcousticKeywordAnalyzer : WakeWordFrameAnalyzer {
     }
 
     var sumSquares = 0.0
+    var peakAbs = 0
     var zeroCrossings = 0
     var prevSample = pcmFrame[0].toInt()
     for (i in 0 until sampleCount) {
       val s = pcmFrame[i].toInt()
+      val mag = abs(s)
+      if (mag > peakAbs) peakAbs = mag
       sumSquares += (s * s).toDouble()
       if ((s >= 0 && prevSample < 0) || (s < 0 && prevSample >= 0)) {
         zeroCrossings++
@@ -60,19 +64,31 @@ class BaselineAcousticKeywordAnalyzer : WakeWordFrameAnalyzer {
       prevSample = s
     }
 
-    val rmsNormalized = (sqrt(sumSquares / sampleCount) / Short.MAX_VALUE).toFloat()
+    val rms = sqrt(sumSquares / sampleCount).toFloat()
+    val rmsNormalized = rms / Short.MAX_VALUE
     val zcrNormalized = zeroCrossings.toFloat() / sampleCount
-    // Typical voiced syllable envelope + consonant fricative crossing pattern (e.g. "M-A-X").
-    val threshold = (1.15f - config.sensitivity).coerceIn(0.12f, 0.85f) * 0.25f
+    val crestFactor = if (rms > 1f) peakAbs.toFloat() / rms else 0f
 
-    if (rmsNormalized > threshold && zcrNormalized in 0.03f..0.45f) {
+    // Adaptive threshold combines calibrated sensitivity with dynamic ambient noise floor.
+    val baseThreshold = (1.15f - config.sensitivity).coerceIn(0.12f, 0.85f) * 0.25f
+    val adaptiveThreshold = maxOf(baseThreshold, ambientNoiseFloorRms * 1.75f)
+    val isVocalSyllable =
+      rmsNormalized > adaptiveThreshold &&
+        zcrNormalized in 0.03f..0.45f &&
+        crestFactor >= MIN_VOCAL_CREST_FACTOR
+
+    if (isVocalSyllable) {
       consecutiveVoiceFrames++
       if (consecutiveVoiceFrames >= TRIGGER_FRAMES_REQUIRED) {
         consecutiveVoiceFrames = 0
         cooldownFramesRemaining = COOLDOWN_FRAMES
-        return (0.78f + (rmsNormalized * 0.2f)).coerceAtMost(0.99f)
+        val snrBoost = ((rmsNormalized - adaptiveThreshold) * 0.6f).coerceIn(0f, 0.18f)
+        return (0.78f + snrBoost).coerceAtMost(0.99f)
       }
     } else {
+      // Smoothly adapt ambient baseline only during non-speech frames.
+      ambientNoiseFloorRms =
+        (ambientNoiseFloorRms * 0.90f + rmsNormalized * 0.10f).coerceIn(0.004f, 0.20f)
       consecutiveVoiceFrames = (consecutiveVoiceFrames - 1).coerceAtLeast(0)
     }
     return 0f
@@ -81,11 +97,14 @@ class BaselineAcousticKeywordAnalyzer : WakeWordFrameAnalyzer {
   fun reset() {
     consecutiveVoiceFrames = 0
     cooldownFramesRemaining = 0
+    ambientNoiseFloorRms = INITIAL_NOISE_FLOOR
   }
 
   companion object {
     private const val TRIGGER_FRAMES_REQUIRED = 6
     private const val COOLDOWN_FRAMES = 45
+    private const val INITIAL_NOISE_FLOOR = 0.015f
+    private const val MIN_VOCAL_CREST_FACTOR = 1.25f
   }
 }
 
@@ -301,9 +320,13 @@ class WakeWordManager(
       while (scope.isActive && _state.value is WakeWordState.StandbyListening) {
         val readCount = audioRecord.read(ephemeralFrame, 0, ephemeralFrame.size)
         if (readCount > 0) {
-          val confidence = frameAnalyzer.analyzeFrame(ephemeralFrame, readCount, _config.value)
-          // Overwrite frame memory immediately after inspection for strict privacy.
-          ephemeralFrame.fill(0)
+          val confidence =
+            try {
+              frameAnalyzer.analyzeFrame(ephemeralFrame, readCount, _config.value)
+            } finally {
+              // Overwrite frame memory immediately after inspection for strict privacy.
+              ephemeralFrame.fill(0)
+            }
           if (confidence >= _config.value.sensitivity) {
             notifyDetection(confidence)
             break

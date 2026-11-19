@@ -3,6 +3,7 @@ package com.example.phone
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.core.net.toUri
 import com.example.utils.ErrorTracker
 
 /**
@@ -28,7 +29,7 @@ class SMSManager(
 ) {
 
   fun isSmsSupported(): Boolean {
-    val probe = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:"))
+    val probe = Intent(Intent.ACTION_SENDTO, "smsto:".toUri())
     return runCatching { probe.resolveActivity(context.packageManager) != null }.getOrDefault(false)
   }
 
@@ -52,7 +53,7 @@ class SMSManager(
     }
 
     val smsIntent =
-      Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${Uri.encode(cleanNumber)}")).apply {
+      Intent(Intent.ACTION_SENDTO, "smsto:${Uri.encode(cleanNumber)}".toUri()).apply {
         putExtra("sms_body", messageBody.trim())
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
       }

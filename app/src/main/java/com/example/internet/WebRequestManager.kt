@@ -3,7 +3,6 @@ package com.example.internet
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import android.os.Build
 import com.example.utils.ErrorTracker
 import java.io.IOException
 import java.net.InetAddress
@@ -91,24 +90,16 @@ class WebRequestManager(
     val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
       ?: return ConnectionQuality.OFFLINE
 
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-      val network = cm.activeNetwork ?: return ConnectionQuality.OFFLINE
-      val caps = cm.getNetworkCapabilities(network) ?: return ConnectionQuality.OFFLINE
-      val hasInternet = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-      if (!hasInternet) return ConnectionQuality.OFFLINE
-      val isUnmetered = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
-      val downstreamKbps = caps.linkDownstreamBandwidthKbps
-      if (!isUnmetered || (downstreamKbps in 1..1500)) {
-        ConnectionQuality.SLOW_OR_METERED
-      } else {
-        ConnectionQuality.NORMAL_WIFI_OR_FAST
-      }
+    val network = cm.activeNetwork ?: return ConnectionQuality.OFFLINE
+    val caps = cm.getNetworkCapabilities(network) ?: return ConnectionQuality.OFFLINE
+    val hasInternet = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    if (!hasInternet) return ConnectionQuality.OFFLINE
+    val isUnmetered = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+    val downstreamKbps = caps.linkDownstreamBandwidthKbps
+    return if (!isUnmetered || (downstreamKbps in 1..1500)) {
+      ConnectionQuality.SLOW_OR_METERED
     } else {
-      @Suppress("DEPRECATION")
-      val info = cm.activeNetworkInfo
-      @Suppress("DEPRECATION")
-      if (info != null && info.isConnected) ConnectionQuality.NORMAL_WIFI_OR_FAST
-      else ConnectionQuality.OFFLINE
+      ConnectionQuality.NORMAL_WIFI_OR_FAST
     }
   }
 

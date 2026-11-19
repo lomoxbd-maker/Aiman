@@ -152,7 +152,7 @@ class MemoryManager(
   override fun parseCommand(inputText: String): MemoryCommand? {
     val trimmed = inputText.trim()
     if (trimmed.isEmpty()) return null
-    val normalized = trimmed.lowercase().replace(",", " ").replace(Regex("\\s+"), " ")
+    val normalized = trimmed.lowercase().replace(",", " ").replace(WHITESPACE_REGEX, " ")
 
     return when {
       normalized.contains("সব memory মুছে দাও") ||
@@ -166,34 +166,22 @@ class MemoryManager(
         normalized.contains("show memory") -> MemoryCommand.ShowAll
 
       normalized.contains("এটা মনে রাখো") || normalized.contains("মনে রাখো") -> {
-        val payload =
-          trimmed
-            .replace(Regex("^(?i)(max[,:\\s-]*)?(এটা\\s*)?মনে\\s*রাখো[:\\s-]*"), "")
-            .trim()
+        val payload = trimmed.replace(BN_REMEMBER_REGEX, "").trim()
         MemoryCommand.Remember(payload)
       }
 
       normalized.contains("remember that") || normalized.startsWith("remember ") -> {
-        val payload =
-          trimmed
-            .replace(Regex("^(?i)(max[,:\\s-]*)?remember(\\s+that)?[:\\s-]*"), "")
-            .trim()
+        val payload = trimmed.replace(EN_REMEMBER_REGEX, "").trim()
         MemoryCommand.Remember(payload)
       }
 
       normalized.contains("এটা ভুলে যাও") || normalized.contains("ভুলে যাও") -> {
-        val query =
-          trimmed
-            .replace(Regex("^(?i)(max[,:\\s-]*)?(এটা\\s*)?ভুলে\\s*যাও[:\\s-]*"), "")
-            .trim()
+        val query = trimmed.replace(BN_FORGET_REGEX, "").trim()
         MemoryCommand.Forget(query)
       }
 
       normalized.contains("forget ") -> {
-        val query =
-          trimmed
-            .replace(Regex("^(?i)(max[,:\\s-]*)?forget[:\\s-]*"), "")
-            .trim()
+        val query = trimmed.replace(EN_FORGET_REGEX, "").trim()
         MemoryCommand.Forget(query)
       }
 
@@ -400,7 +388,10 @@ class MemoryManager(
         structuredBuffer.removeAll { it.content.contains(cleanQuery, ignoreCase = true) }
       }
       if (removedItems.isNotEmpty()) {
+        val removedIds = removedItems.map { it.id }.toHashSet()
+        legacyBuffer.removeAll { it.id in removedIds }
         publishStructuredSnapshotLocked()
+        _entries.value = legacyBuffer.reversed()
       }
     }
 
@@ -444,7 +435,7 @@ class MemoryManager(
     val lower = text.lowercase()
     if (SENSITIVE_KEYWORDS.any { lower.contains(it) }) return true
     // Detect 12+ digit card/NID sequences or 4-6 digit explicit PIN/OTP patterns.
-    if (Regex("\\b\\d{12,19}\\b").containsMatchIn(text)) return true
+    if (CARD_NUMBER_REGEX.containsMatchIn(text)) return true
     return false
   }
 
@@ -473,7 +464,7 @@ class MemoryManager(
   private fun extractCleanContent(type: MemoryType, payload: String): String {
     if (type != MemoryType.USER_NAME) return payload
     return payload
-      .replace(Regex("^(?i)(আমার নাম|my name is|call me)\\s*"), "")
+      .replace(NAME_PREFIX_REGEX, "")
       .trim()
       .ifEmpty { payload }
   }
@@ -481,6 +472,14 @@ class MemoryManager(
   companion object {
     private const val MODULE_NAME = "MemoryManager"
     private const val MAX_ENTRIES = 50
+
+    private val WHITESPACE_REGEX = Regex("\\s+")
+    private val BN_REMEMBER_REGEX = Regex("^(?i)(max[,:\\s-]*)?(এটা\\s*)?মনে\\s*রাখো[:\\s-]*")
+    private val EN_REMEMBER_REGEX = Regex("^(?i)(max[,:\\s-]*)?remember(\\s+that)?[:\\s-]*")
+    private val BN_FORGET_REGEX = Regex("^(?i)(max[,:\\s-]*)?(এটা\\s*)?ভুলে\\s*যাও[:\\s-]*")
+    private val EN_FORGET_REGEX = Regex("^(?i)(max[,:\\s-]*)?forget[:\\s-]*")
+    private val CARD_NUMBER_REGEX = Regex("\\b\\d{12,19}\\b")
+    private val NAME_PREFIX_REGEX = Regex("^(?i)(আমার নাম|my name is|call me)\\s*")
 
     private val TRIVIAL_NOISE =
       setOf("ok", "okay", "hi", "hello", "hmm", "yes", "no", "হ্যাঁ", "না", "ওকে")

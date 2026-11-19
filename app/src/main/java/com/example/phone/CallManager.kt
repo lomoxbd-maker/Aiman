@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import com.example.utils.ErrorTracker
 
 /**
@@ -76,7 +77,7 @@ class CallManager(
     val canDirectCall = preferDirectCall && hasCallPermission()
     val action = if (canDirectCall) Intent.ACTION_CALL else Intent.ACTION_DIAL
     val intent =
-      Intent(action, Uri.parse("tel:${Uri.encode(normalized)}")).apply {
+      Intent(action, "tel:${Uri.encode(normalized)}".toUri()).apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
       }
 

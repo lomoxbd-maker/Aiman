@@ -141,15 +141,14 @@ class CameraManager(
   private fun inspectHardwareInternal(): CameraHardwareInfo {
     val pm = context.packageManager
     val hasAny = pm.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
-    val hasBack = pm.hasSystemFeature(PackageManager.FEATURE_CAMERA)
     val hasFront = pm.hasSystemFeature(PackageManager.FEATURE_CAMERA_FRONT)
     val hasFlash = pm.hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH)
     return CameraHardwareInfo(
-      hasAnyCamera = hasAny || hasBack || hasFront,
-      hasBackCamera = hasBack || hasAny,
+      hasAnyCamera = hasAny || hasFront,
+      hasBackCamera = hasAny,
       hasFrontCamera = hasFront,
       hasFlash = hasFlash,
-      supportsVideo = hasAny || hasBack || hasFront,
+      supportsVideo = hasAny || hasFront,
     )
   }
 

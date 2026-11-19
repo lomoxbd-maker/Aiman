@@ -2,9 +2,9 @@ package com.example.floating
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.core.net.toUri
 import com.example.utils.ErrorTracker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,11 +24,7 @@ class FloatingAssistantManager(
   private val context: Context,
   private val errorTracker: ErrorTracker,
   private val overlayPermissionProvider: () -> Boolean = {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-      runCatching { Settings.canDrawOverlays(context) }.getOrDefault(false)
-    } else {
-      true
-    }
+    runCatching { Settings.canDrawOverlays(context) }.getOrDefault(false)
   },
 ) {
 
@@ -71,12 +67,11 @@ class FloatingAssistantManager(
   }
 
   fun requestOverlayPermissionSettings(): Boolean {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
     return runCatching {
       val intent =
         Intent(
           Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-          Uri.parse("package:${context.packageName}"),
+          "package:${context.packageName}".toUri(),
         ).apply {
           addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }

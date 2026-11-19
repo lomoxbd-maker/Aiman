@@ -102,7 +102,7 @@ class FloatingOverlayService : Service() {
   }
 
   private fun attachOverlayBubbleSafely() {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+    if (!Settings.canDrawOverlays(this)) {
       stopSelf()
       return
     }
@@ -147,7 +147,7 @@ class FloatingOverlayService : Service() {
 
       val label =
         TextView(this).apply {
-          text = "MAX"
+          text = getString(R.string.app_name)
           setTextColor(0xFFFFFFFF.toInt())
           textSize = 14f
           setPadding(8, 0, 14, 0)

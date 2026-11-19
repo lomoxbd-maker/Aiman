@@ -633,6 +633,7 @@ class MAXCore(
       val settings = runCatching { settingsManager.settingsFlow.first() }.getOrDefault(MAXSettings())
       permissionManager.refreshAll()
       memoryManager.initialize(settings.memoryRetentionEnabled)
+      smartController?.refreshSuggestions()
       speechManager.initialize(compat.hasSpeechRecognitionService)
       ttsManager.updateVoiceConfig(
         com.example.tts.VoiceConfig(

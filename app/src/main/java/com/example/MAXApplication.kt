@@ -242,9 +242,7 @@ class MAXApplication : Application() {
         voiceNotesManager = voiceNotesManager,
         aiSuggestionManager = aiSuggestionManager,
         errorTracker = errorLogger,
-      ).apply {
-        refreshSuggestions()
-      }
+      )
     val appUpdateManager =
       AppUpdateManager(
         context = this,

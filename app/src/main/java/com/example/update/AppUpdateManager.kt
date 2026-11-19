@@ -2,8 +2,8 @@ package com.example.update
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
+import androidx.core.net.toUri
 import com.example.BuildConfig
 import com.example.permissions.AppPermission
 import com.example.permissions.PermissionRequestHandler
@@ -176,7 +176,7 @@ class AppUpdateManager(
     if (!url.startsWith("https://", ignoreCase = true)) return false
     return runCatching {
       val intent =
-        Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+        Intent(Intent.ACTION_VIEW, url.toUri()).apply {
           addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
       context.startActivity(intent)
