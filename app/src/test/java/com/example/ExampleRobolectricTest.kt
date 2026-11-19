@@ -756,6 +756,280 @@ class ExampleRobolectricTest {
     appMgr.release()
   }
 
+  @Test
+  fun `file manager enforces privacy rules, reads pdf, text, image, runs ocr, and requires confirmation before delete or edit`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val logger = ErrorLogger()
+    val permManager = com.example.permissions.PermissionManager(context, logger)
+    val privacy = com.example.permissions.PrivacyController({ permManager }, logger)
+    val handler = com.example.permissions.PermissionRequestHandler(permManager, privacy, logger)
+
+    val fakeMeta =
+      object : com.example.files.FileMetadataBackend {
+        override fun inspectUri(uri: android.net.Uri): com.example.files.MAXFileItem {
+          val path = uri.toString()
+          val name = path.substringAfterLast('/')
+          val kind =
+            when {
+              name.endsWith(".pdf") -> com.example.files.FileKind.PDF
+              name.endsWith(".png") -> com.example.files.FileKind.IMAGE
+              else -> com.example.files.FileKind.TEXT_DOCUMENT
+            }
+          val mime =
+            when (kind) {
+              com.example.files.FileKind.PDF -> "application/pdf"
+              com.example.files.FileKind.IMAGE -> "image/png"
+              else -> "text/plain"
+            }
+          return com.example.files.MAXFileItem(
+            id = "id_$name",
+            uriString = path,
+            displayName = name,
+            mimeType = mime,
+            sizeBytes = 2048L,
+            kind = kind,
+            addedAtMillis = 1_000L,
+          )
+        }
+      }
+
+    val fakePdf =
+      object : com.example.files.PdfReaderBackend {
+        override fun readPdf(uri: android.net.Uri, maxChars: Int): Result<com.example.files.PdfReadOutput> =
+          Result.success(
+            com.example.files.PdfReadOutput(
+              pageCount = 3,
+              extractedText = "MAX quarterly summary PDF content.",
+              note = "Read 3 pages",
+            ),
+          )
+      }
+
+    val fakeDoc =
+      object : com.example.files.DocumentReaderBackend {
+        override fun readText(uri: android.net.Uri, mimeType: String, maxChars: Int): Result<String> =
+          Result.success("Meeting checklist and private study notes.")
+      }
+
+    val fakeImage =
+      object : com.example.files.ImageReaderBackend {
+        override fun inspectImage(uri: android.net.Uri): Result<com.example.files.ImageDimensions> =
+          Result.success(com.example.files.ImageDimensions(1280, 720, "image/png"))
+      }
+
+    val fakeOcr =
+      object : com.example.files.OcrBackend {
+        override val engineName: String = "TestOfflineOcr"
+        override fun extractTextFromImage(item: com.example.files.MAXFileItem): Result<String> =
+          Result.success("Invoice #402 Total: 550 BDT")
+      }
+
+    val fileManager =
+      com.example.files.FileManager(
+        permissionController = permManager,
+        privacyGuard = privacy,
+        permissionRequestHandler = handler,
+        fileBrowser = com.example.files.FileBrowser(fakeMeta, logger),
+        pdfReader = com.example.files.PDFReader(fakePdf, logger),
+        documentReader = com.example.files.DocumentReader(fakeDoc, logger),
+        imageReader = com.example.files.ImageReader(fakeImage, logger),
+        ocrManager = com.example.files.OCRManager(fakeOcr, logger),
+        errorTracker = logger,
+      )
+
+    // 1. Automatic access must always be blocked
+    assertFalse(fileManager.requestOpenFilePicker(initiatedByUser = false))
+    assertTrue(fileManager.state.value is com.example.files.FileState.BlockedByPrivacyPolicy)
+    assertFalse(fileManager.openAndReadFile("id_report.pdf", initiatedByUser = false))
+    assertTrue(fileManager.state.value is com.example.files.FileState.BlockedByPrivacyPolicy)
+
+    // 2. Requires user Files policy permission before opening picker
+    assertFalse(fileManager.requestOpenFilePicker(initiatedByUser = true, preferBangla = true))
+    assertTrue(fileManager.state.value is com.example.files.FileState.PermissionRequired)
+    assertEquals(com.example.permissions.AppPermission.FILES, handler.pendingRequest.value?.permission)
+
+    // Grant Files policy permission and open picker
+    handler.onSystemPermissionResult(com.example.permissions.AppPermission.FILES, granted = true)
+    assertTrue(fileManager.requestOpenFilePicker(initiatedByUser = true))
+    assertTrue(fileManager.state.value is com.example.files.FileState.ReadyToBrowse)
+
+    // 3. Pick PDF, TXT, Image via SAF result
+    fileManager.onFilesPicked(
+      listOf(
+        android.net.Uri.parse("content://docs/report.pdf"),
+        android.net.Uri.parse("content://docs/notes.txt"),
+        android.net.Uri.parse("content://docs/receipt.png"),
+      ),
+    )
+    assertEquals(3, fileManager.files.value.size)
+
+    // Read PDF
+    assertTrue(fileManager.openAndReadFile("id_report.pdf", initiatedByUser = true))
+    assertEquals(3, fileManager.activeContent.value?.pageCount)
+    assertTrue(fileManager.activeContent.value?.text?.contains("quarterly summary") == true)
+
+    // Read text doc
+    assertTrue(fileManager.openAndReadFile("id_notes.txt", initiatedByUser = true))
+    assertTrue(fileManager.activeContent.value?.text?.contains("checklist") == true)
+
+    // Read image & run OCR (automatic OCR blocked, explicit succeeds)
+    assertTrue(fileManager.openAndReadFile("id_receipt.png", initiatedByUser = true))
+    assertEquals(1280, fileManager.activeContent.value?.widthPx)
+    assertTrue(fileManager.runOcrOnFile("id_receipt.png", initiatedByUser = false) == null)
+    val ocrRes = fileManager.runOcrOnFile("id_receipt.png", initiatedByUser = true)
+    assertTrue(ocrRes != null && ocrRes.isSuccess)
+    assertEquals("Invoice #402 Total: 550 BDT", ocrRes?.extractedText)
+
+    // 4. Never modify without explicit permission; never delete without confirmation
+    assertFalse(fileManager.requestModifyFileContent("id_notes.txt", "changed", hasExplicitPermission = false))
+    assertTrue(fileManager.state.value is com.example.files.FileState.BlockedByPrivacyPolicy)
+
+    fileManager.requestDeleteFile("id_notes.txt")
+    assertTrue(fileManager.pendingConfirmation.value != null)
+    assertEquals(3, fileManager.files.value.size)
+    assertTrue(fileManager.confirmPendingFileAction())
+    assertEquals(2, fileManager.files.value.size)
+
+    fileManager.release()
+  }
+
+  @Test
+  fun `smart features handle bangla commands, privacy gating, and integrations cleanly`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val logger = ErrorLogger()
+    val permManager = com.example.permissions.PermissionManager(context, logger)
+    val privacy = com.example.permissions.PrivacyController({ permManager }, logger)
+    val handler = com.example.permissions.PermissionRequestHandler(permManager, privacy, logger)
+    val memoryMgr = MemoryManager(logger).apply { initialize(true) }
+    val emotionMgr = EmotionManager(EmotionDetector(), logger)
+
+    val translator = com.example.smart.TranslationManager(logger)
+    val fixedNow = 1_763_540_000_000L // deterministic timestamp
+    val reminderMgr =
+      com.example.smart.ReminderManager(
+        context = context,
+        permissionController = permManager,
+        privacyGuard = privacy,
+        permissionRequestHandler = handler,
+        errorTracker = logger,
+        clockNowMillis = { fixedNow },
+      )
+    val notesMgr = com.example.smart.NotesManager(memoryMgr, logger)
+    val fakeCalBackend =
+      object : com.example.smart.CalendarBackend {
+        override fun queryEventsForRange(
+          startMillis: Long,
+          endMillis: Long,
+        ): Result<List<com.example.smart.CalendarEventItem>> =
+          Result.success(
+            listOf(
+              com.example.smart.CalendarEventItem(
+                id = "ev1",
+                title = "Team Sync",
+                timeLabel = "10:30 AM - 11:00 AM",
+                startMillis = startMillis + 3_600_000L,
+                endMillis = startMillis + 5_400_000L,
+                sourceLabel = "Device Calendar",
+              ),
+            ),
+          )
+      }
+    val calendarMgr =
+      com.example.smart.CalendarManager(
+        context = context,
+        privacyGuard = privacy,
+        permissionRequestHandler = handler,
+        backend = fakeCalBackend,
+        reminderManager = reminderMgr,
+        errorTracker = logger,
+      )
+    val voiceNotesMgr = com.example.smart.VoiceNotesManager(logger)
+    val suggestionMgr =
+      com.example.smart.AISuggestionManager(
+        emotionManager = emotionMgr,
+        memoryController = memoryMgr,
+        reminderManager = reminderMgr,
+        notesManager = notesMgr,
+        calendarManager = calendarMgr,
+        errorTracker = logger,
+      )
+
+    val smartCtrl =
+      com.example.smart.SmartFeaturesController(
+        translationManager = translator,
+        reminderManager = reminderMgr,
+        notesManager = notesMgr,
+        calendarManager = calendarMgr,
+        voiceNotesManager = voiceNotesMgr,
+        aiSuggestionManager = suggestionMgr,
+      )
+
+    // 1. Translation command (Bangla -> English)
+    val translateReply =
+      smartCtrl.handleVoiceCommand(
+        "MAX, এটা বাংলা থেকে ইংরেজিতে অনুবাদ করো: আমি ভালো আছি",
+        preferBangla = true,
+        initiatedByUser = true,
+      )
+    assertTrue(translateReply != null)
+    assertEquals("I am doing well.", translator.lastRecord.value?.translatedText)
+
+    // 2. Reminder command with Bangla digit ("৮টা") + tomorrow
+    assertFalse(smartCtrl.scheduleReminder("Auto Test", fixedNow + 10_000L, initiatedByUser = false))
+    val remReply =
+      smartCtrl.handleVoiceCommand(
+        "MAX, আগামীকাল সকাল ৮টার জন্য রিমাইন্ডার দাও",
+        preferBangla = true,
+        initiatedByUser = true,
+      )
+    assertTrue(remReply != null)
+    assertEquals(1, reminderMgr.reminders.value.size)
+    val scheduledCal = java.util.Calendar.getInstance().apply {
+      timeInMillis = reminderMgr.reminders.value.first().triggerAtMillis
+    }
+    assertEquals(8, scheduledCal.get(java.util.Calendar.HOUR_OF_DAY))
+
+    // 3. Notes command mirrors to MemoryManager cleanly
+    assertFalse(smartCtrl.addNote("Hidden", "Auto", alsoRememberInMemory = false, initiatedByUser = false))
+    val noteReply =
+      smartCtrl.handleVoiceCommand(
+        "MAX, একটা নোট লিখে রাখো: আজ বিকেলে বই কিনব",
+        preferBangla = true,
+        initiatedByUser = true,
+      )
+    assertTrue(noteReply != null)
+    assertEquals(1, notesMgr.notes.value.size)
+    assertTrue(memoryMgr.memories.value.any { it.content.contains("বই কিনব") })
+
+    // 4. Calendar command respects privacy permission, then reads OS events when allowed
+    assertFalse(calendarMgr.loadTodaySchedule(initiatedByUser = false).isSuccess)
+    assertFalse(smartCtrl.loadTodayCalendar(initiatedByUser = true, preferBangla = true))
+    assertEquals(com.example.permissions.AppPermission.CALENDAR, handler.pendingRequest.value?.permission)
+
+    val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+    org.robolectric.Shadows.shadowOf(app).grantPermissions(android.Manifest.permission.READ_CALENDAR)
+    handler.onSystemPermissionResult(com.example.permissions.AppPermission.CALENDAR, granted = true)
+
+    val calReply =
+      smartCtrl.handleVoiceCommand(
+        "MAX, আজকের ক্যালেন্ডার দেখাও",
+        preferBangla = true,
+        initiatedByUser = true,
+      )
+    assertTrue(calReply != null && calReply.contains("Team Sync"))
+
+    // 5. Voice Notes (text-only, never stores audio) + AI Suggestions
+    assertFalse(smartCtrl.saveVoiceNote("Auto", "Sneaky", initiatedByUser = false))
+    assertTrue(smartCtrl.saveVoiceNote("Shopping List", "Milk and dates", initiatedByUser = true))
+    assertEquals(1, voiceNotesMgr.voiceNotes.value.size)
+
+    val suggestions = smartCtrl.refreshSuggestions()
+    assertTrue(suggestions.isNotEmpty())
+    assertTrue(suggestions.any { it.id == "sug_next_rem" })
+
+    memoryMgr.release()
+  }
+
   private fun com.example.phone.StopwatchManager.lapStopwatchProxyTestFix(
     sw: com.example.phone.StopwatchManager,
   ) {
