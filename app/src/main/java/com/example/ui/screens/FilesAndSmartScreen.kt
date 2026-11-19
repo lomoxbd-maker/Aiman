@@ -22,6 +22,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.TextSnippet
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.CheckCircle
@@ -33,9 +35,7 @@ import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.TextSnippet
 import androidx.compose.material.icons.filled.Translate
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -291,7 +291,7 @@ fun FilesAndSmartScreen(
                       modifier = Modifier.weight(1f),
                     )
                     IconButton(onClick = { onSpeakText(rec.translatedText) }) {
-                      Icon(Icons.Filled.VolumeUp, contentDescription = "Speak translation")
+                      Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = "Speak translation")
                     }
                   }
                 }
@@ -398,7 +398,7 @@ fun FilesAndSmartScreen(
                 },
                 modifier = Modifier.fillMaxWidth().testTag("save_note_button"),
               ) {
-                Icon(Icons.Filled.TextSnippet, contentDescription = null)
+                Icon(Icons.AutoMirrored.Filled.TextSnippet, contentDescription = null)
                 Spacer(Modifier.widthIn(min = 6.dp))
                 Text("Save Note")
               }

@@ -11,6 +11,8 @@ import com.example.apps.MapsManager
 import com.example.apps.MessengerManager
 import com.example.apps.WhatsAppManager
 import com.example.apps.YouTubeManager
+import com.example.automation.AutomationManager
+import com.example.brain.AIBrainManager
 import com.example.camera.CameraManager
 import com.example.conversation.ConversationManager
 import com.example.core.MAXCore
@@ -29,6 +31,7 @@ import com.example.files.ImageReader
 import com.example.files.OCRManager
 import com.example.files.OnDeviceOcrBackend
 import com.example.files.PDFReader
+import com.example.floating.FloatingAssistantManager
 import com.example.gallery.GalleryManager
 import com.example.internet.BrowserManager
 import com.example.internet.InternetManager
@@ -57,11 +60,12 @@ import com.example.smart.AndroidCalendarBackend
 import com.example.smart.CalendarManager
 import com.example.smart.NotesManager
 import com.example.smart.ReminderManager
-import com.example.smart.SmartFeaturesController
+import com.example.smart.SmartFeatureManager
 import com.example.smart.TranslationManager
 import com.example.smart.VoiceNotesManager
 import com.example.speech.SpeechManager
 import com.example.tts.TTSManager
+import com.example.update.AppUpdateManager
 import com.example.utils.DeviceCompatibilityChecker
 import com.example.utils.ErrorLogger
 import com.example.wakeword.WakeWordManager
@@ -90,7 +94,7 @@ class MAXApplication : Application() {
     val permissionRequestHandler =
       PermissionRequestHandler(permissionManager, privacyController, errorLogger)
 
-    val speechManager = SpeechManager(errorLogger)
+    val speechManager = SpeechManager(errorLogger, context = this)
     val ttsManager = TTSManager(this, errorLogger)
     val memoryRepository = MemoryRepository(this, errorLogger)
     val memoryManager = MemoryManager(errorLogger, repository = memoryRepository)
@@ -98,13 +102,25 @@ class MAXApplication : Application() {
     val emotionManager = EmotionManager(EmotionDetector(), errorLogger)
     val emotionEngine = EmotionEngine(emotionManager)
     val personalityManager = PersonalityManager(emotionManager, memoryManager)
+    val aiBrainManager =
+      AIBrainManager(
+        emotionManager = emotionManager,
+        memoryController = memoryManager,
+        personalityManager = personalityManager,
+        privacyGuard = privacyController,
+        permissionRequestHandler = permissionRequestHandler,
+        ttsController = ttsManager,
+        errorTracker = errorLogger,
+      )
     val conversationManager =
       ConversationManager(
         emotionManager = emotionManager,
         errorTracker = errorLogger,
         memoryController = memoryManager,
         personalityManager = personalityManager,
-      )
+      ).apply {
+        setBrainManager(aiBrainManager)
+      }
     val serviceCoordinator = FoundationServiceCoordinator()
     val cameraManager =
       CameraManager(
@@ -217,14 +233,37 @@ class MAXApplication : Application() {
         calendarManager = calendarManager,
         errorTracker = errorLogger,
       )
-    val smartController =
-      SmartFeaturesController(
+    val smartFeatureManager =
+      SmartFeatureManager(
         translationManager = translationManager,
         reminderManager = reminderManager,
         notesManager = notesManager,
         calendarManager = calendarManager,
         voiceNotesManager = voiceNotesManager,
         aiSuggestionManager = aiSuggestionManager,
+        errorTracker = errorLogger,
+      ).apply {
+        refreshSuggestions()
+      }
+    val appUpdateManager =
+      AppUpdateManager(
+        context = this,
+        privacyGuard = privacyController,
+        permissionRequestHandler = permissionRequestHandler,
+        errorTracker = errorLogger,
+      )
+    val automationManager =
+      AutomationManager(
+        reminderManager = reminderManager,
+        notesManager = notesManager,
+        memoryController = memoryManager,
+        ttsController = ttsManager,
+        errorTracker = errorLogger,
+      )
+    val floatingAssistantManager =
+      FloatingAssistantManager(
+        context = this,
+        errorTracker = errorLogger,
       )
 
     maxCore =
@@ -257,9 +296,34 @@ class MAXApplication : Application() {
         phoneManager = phoneManager,
         appManager = appManager,
         fileManager = fileManager,
-        smartController = smartController,
+        smartFeatureManager = smartFeatureManager,
+        smartController = smartFeatureManager,
+        appUpdateManager = appUpdateManager,
+        brainManager = aiBrainManager,
+        automationManager = automationManager,
+        floatingAssistantManager = floatingAssistantManager,
       )
     repository = MAXRepositoryImpl(maxCore)
+
+    val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
+    Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+      runCatching {
+        errorLogger.logError("MAXApplication", "Unhandled exception on ${thread.name}", throwable)
+        maxCore.releaseTransientTaskResources()
+        maxCore.handleBackgroundLifecycle(inBackground = true)
+      }
+      previousHandler?.uncaughtException(thread, throwable)
+    }
+  }
+
+  override fun onTrimMemory(level: Int) {
+    super.onTrimMemory(level)
+    if (level >= TRIM_MEMORY_UI_HIDDEN && ::maxCore.isInitialized) {
+      runCatching {
+        coil.Coil.imageLoader(this).memoryCache?.clear()
+        maxCore.releaseTransientTaskResources()
+      }
+    }
   }
 
   override fun onTerminate() {

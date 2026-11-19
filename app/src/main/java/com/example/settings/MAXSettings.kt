@@ -9,7 +9,7 @@ import com.example.tts.VoiceLanguage
 data class MAXSettings(
   val wakeWordEnabled: Boolean = true,
   val wakeWordSensitivity: Float = 0.72f,
-  val ttsSpeechRate: Float = 0.96f,
+  val ttsSpeechRate: Float = 0.90f,
   val ttsPitch: Float = 1.0f,
   val voiceLanguage: VoiceLanguage = VoiceLanguage.BANGLA_BD,
   val speechStyle: SpeechStyle = SpeechStyle.CALM,

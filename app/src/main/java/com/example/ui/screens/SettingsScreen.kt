@@ -13,6 +13,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
+import com.example.BuildConfig
+import com.example.update.UpdateState
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -42,6 +53,10 @@ fun SettingsScreen(
   onSetTtsPitch: (Float) -> Unit,
   onSetMemoryRetentionEnabled: (Boolean) -> Unit,
   onSetDarkThemePreferred: (Boolean) -> Unit,
+  onCheckForUpdates: () -> Unit = {},
+  onOpenReleasePage: (String) -> Unit = {},
+  onToggleFloatingBubble: () -> Unit = {},
+  onRequestOverlayPermission: () -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
   val settings = uiState.settings
@@ -196,6 +211,121 @@ fun SettingsScreen(
               onCheckedChange = onSetDarkThemePreferred,
               testTag = "switch_dark_theme",
             )
+          }
+        }
+
+        SectionHeader(title = "Release Build & Future Update System", trailingBadge = "v${BuildConfig.VERSION_NAME}")
+
+        Card(
+          shape = RoundedCornerShape(18.dp),
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        ) {
+          Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+          ) {
+            Text(
+              text = "Version ${BuildConfig.VERSION_NAME} (Code ${BuildConfig.VERSION_CODE}) • Stable Channel",
+              style = MaterialTheme.typography.titleSmall,
+              color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+              text = "Target Android 8.0+ (API 26–36) • Play-compliant HTTPS update checks only on your request (no dynamic code loading).",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            val statusMessage =
+              when (val state = uiState.updateState) {
+                is UpdateState.Idle -> "Build ${state.currentVersionName} (${state.channel}) ready."
+                UpdateState.Checking -> "Checking release manifest..."
+                is UpdateState.UpToDate -> "Up to date: v${state.info.latestVersionName} — ${state.info.releaseNotes}"
+                is UpdateState.UpdateAvailable -> "New release v${state.info.latestVersionName}: ${state.info.releaseNotes}"
+                is UpdateState.PermissionRequired -> "Permission needed: ${state.reason}"
+                is UpdateState.Error -> "Update notice: ${state.message}"
+              }
+
+            Text(
+              text = statusMessage,
+              style = MaterialTheme.typography.bodyMedium,
+              color = MaterialTheme.colorScheme.primary,
+            )
+
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+              Button(
+                onClick = onCheckForUpdates,
+                modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp).testTag("check_updates_button"),
+                shape = RoundedCornerShape(12.dp),
+              ) {
+                Icon(Icons.Filled.SystemUpdate, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text("Check for Updates")
+              }
+
+              val releaseUrl =
+                when (val s = uiState.updateState) {
+                  is UpdateState.UpToDate -> s.info.releasePageUrl
+                  is UpdateState.UpdateAvailable -> s.info.releasePageUrl
+                  else -> null
+                }
+              if (releaseUrl != null) {
+                OutlinedButton(
+                  onClick = { onOpenReleasePage(releaseUrl) },
+                  modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                  shape = RoundedCornerShape(12.dp),
+                ) {
+                  Icon(Icons.Filled.OpenInBrowser, contentDescription = "Open verified release page")
+                }
+              }
+            }
+          }
+        }
+
+        SectionHeader(title = "Floating Assistant Bubble")
+
+        Card(
+          shape = RoundedCornerShape(18.dp),
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        ) {
+          Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+          ) {
+            Text(
+              text = "Quick voice bubble stays off until you turn it on. Never records secretly when minimized.",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+              Button(
+                onClick = onToggleFloatingBubble,
+                modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp).testTag("settings_toggle_floating_button"),
+                shape = RoundedCornerShape(12.dp),
+              ) {
+                Text(
+                  if (uiState.floatingState is com.example.floating.FloatingState.Inactive) {
+                    "Show Floating Bubble"
+                  } else {
+                    "Hide Bubble"
+                  },
+                )
+              }
+              OutlinedButton(
+                onClick = onRequestOverlayPermission,
+                modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp).testTag("settings_overlay_permission_button"),
+                shape = RoundedCornerShape(12.dp),
+              ) {
+                Text("Overlay Settings")
+              }
+            }
           }
         }
       }

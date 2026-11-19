@@ -139,7 +139,7 @@ interface SmartEventListener {
  * [CalendarManager], [VoiceNotesManager], [AISuggestionManager]) with [MAXCore],
  * [ConversationManager], [EmotionManager], [MemoryManager], [PermissionManager], and [TTSManager].
  */
-class SmartFeaturesController(
+open class SmartFeaturesController(
   val translationManager: TranslationManager,
   val reminderManager: ReminderManager,
   val notesManager: NotesManager,
@@ -154,6 +154,11 @@ class SmartFeaturesController(
 
   fun setEventListener(eventListener: SmartEventListener?) {
     listener = eventListener
+  }
+
+  open fun release() {
+    listener = null
+    _state.value = SmartFeatureState.Idle
   }
 
   fun translateText(

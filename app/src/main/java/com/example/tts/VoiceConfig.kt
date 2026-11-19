@@ -39,7 +39,7 @@ enum class VoiceLanguage(
 data class VoiceConfig(
   val language: VoiceLanguage = VoiceLanguage.BANGLA_BD,
   val speechStyle: SpeechStyle = SpeechStyle.CALM,
-  val speechSpeed: Float = 0.94f,
+  val speechSpeed: Float = 0.90f,
   val pitch: Float = 1.0f,
   val preferOfflineNaturalVoice: Boolean = true,
   val naturalSentencePauses: Boolean = true,

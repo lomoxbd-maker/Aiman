@@ -1030,6 +1030,321 @@ class ExampleRobolectricTest {
     memoryMgr.release()
   }
 
+  @Test
+  fun `ai brain thinks before responding, asks missing info, respects offline first and internet permission`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val logger = ErrorLogger()
+    val permManager = com.example.permissions.PermissionManager(context, logger)
+    val privacy = com.example.permissions.PrivacyController({ permManager }, logger)
+    val handler = com.example.permissions.PermissionRequestHandler(permManager, privacy, logger)
+    val memoryMgr = MemoryManager(logger).apply { initialize(true) }
+    val emotionMgr = EmotionManager(EmotionDetector(), logger)
+    val personalityMgr = PersonalityManager(emotionMgr, memoryMgr)
+    val ttsMgr = TTSManager(context, logger)
+
+    val brain =
+      com.example.brain.AIBrainManager(
+        emotionManager = emotionMgr,
+        memoryController = memoryMgr,
+        personalityManager = personalityMgr,
+        privacyGuard = privacy,
+        permissionRequestHandler = handler,
+        ttsController = ttsMgr,
+        errorTracker = logger,
+      )
+
+    // 1. Offline task completes strictly without using internet (personal memory recall + time)
+    memoryMgr.saveMemory(MemoryType.USER_PREFERENCE, "কফি পছন্দ করি", hasExplicitPermission = true)
+    val offlineRecall = brain.thinkAndPlan("আমার পছন্দ কী?", VoiceLanguage.BANGLA_BD)
+    assertFalse(offlineRecall.usedInternet)
+    assertEquals(com.example.brain.ExecutionMode.OFFLINE_LOCAL, offlineRecall.decision.mode)
+    assertTrue(offlineRecall.reply.contains("কফি পছন্দ করি"))
+
+    // 2. Missing info triggers calm clarifying question before calling online or guessing
+    val missingCityOutcome = brain.thinkAndPlan("আবহাওয়া কেমন?", VoiceLanguage.BANGLA_BD)
+    assertFalse(missingCityOutcome.usedInternet)
+    assertEquals(com.example.brain.ExecutionMode.NEEDS_CLARIFICATION, missingCityOutcome.decision.mode)
+    assertTrue(brain.brainState.value is com.example.brain.BrainLifecycleState.AwaitingClarification)
+
+    // 3. Answering the missing city triggers internet permission ask cleanly (never browses without consent!)
+    privacy.setPermissionAllowed(com.example.permissions.AppPermission.INTERNET, false)
+    val askPermissionOutcome = brain.thinkAndPlan("ঢাকা", VoiceLanguage.BANGLA_BD)
+    assertFalse(askPermissionOutcome.usedInternet)
+    assertEquals(com.example.brain.ExecutionMode.REQUIRES_INTERNET_PERMISSION, askPermissionOutcome.decision.mode)
+    assertEquals(com.example.permissions.AppPermission.INTERNET, handler.pendingRequest.value?.permission)
+
+    // 4. Once user grants internet permission, online weather research proceeds cleanly
+    privacy.setPermissionAllowed(com.example.permissions.AppPermission.INTERNET, true)
+    val grantedOutcome =
+      brain.thinkAndPlan(
+        userInput = "ঢাকা এর আবহাওয়া",
+        language = VoiceLanguage.BANGLA_BD,
+        actionExecutor = { cmd -> "Executed online: $cmd" },
+      )
+    assertTrue(grantedOutcome.usedInternet)
+    assertEquals(com.example.brain.ExecutionMode.INTERNET_EXECUTION, grantedOutcome.decision.mode)
+    assertTrue(grantedOutcome.reply.contains("ঢাকা"))
+    assertTrue(brain.contextSnapshot.value.turnCount >= 4)
+
+    // 5. Graceful error fallback never crashes and explains simply
+    val errorOutcome =
+      brain.thinkAndPlan(
+        userInput = "YouTube-এ গান সার্চ করো",
+        language = VoiceLanguage.BANGLA_BD,
+        actionExecutor = { throw IllegalStateException("Simulated socket reset") },
+      )
+    assertFalse(errorOutcome.usedInternet)
+    assertTrue(brain.brainState.value is com.example.brain.BrainLifecycleState.ErrorFallback)
+    assertTrue(errorOutcome.reply.contains("দুঃখিত"))
+
+    brain.release()
+    memoryMgr.release()
+  }
+
+  @Test
+  fun `final integration executes complete wake loop, sanju followup, background cleanup, and safe update gate`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val logger = ErrorLogger()
+    val compatChecker = com.example.utils.DeviceCompatibilityChecker(context)
+    val settingsMgr = com.example.settings.SettingsManager(context, logger)
+    val permMgr = com.example.permissions.PermissionManager(context, logger)
+    val privacy = com.example.permissions.PrivacyController({ permMgr }, logger)
+    val permHandler = com.example.permissions.PermissionRequestHandler(permMgr, privacy, logger)
+    val speechMgr = SpeechManager(logger, context = context)
+    val ttsMgr = TTSManager(context, logger)
+    val memoryMgr = MemoryManager(logger)
+    val wakeMgr = WakeWordManager(logger, privacyGuard = privacy)
+    val emotionMgr = EmotionManager(EmotionDetector(), logger)
+    val emotionEngine = com.example.emotion.EmotionEngine(emotionMgr)
+    val personalityMgr = PersonalityManager(emotionMgr, memoryMgr)
+    val convMgr = ConversationManager(emotionMgr, logger, memoryMgr, personalityMgr)
+    val serviceCoord = com.example.service.FoundationServiceCoordinator()
+
+    val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+    org.robolectric.Shadows.shadowOf(app).grantPermissions(android.Manifest.permission.RECORD_AUDIO)
+    org.robolectric.Shadows.shadowOf(context.packageManager)
+      .setSystemFeature(android.content.pm.PackageManager.FEATURE_MICROPHONE, true)
+    permMgr.refreshAll(privacy.policy.value)
+
+    val fakeUpdateTransport =
+      object : com.example.update.UpdateManifestTransport {
+        override fun fetchLatestReleaseManifest(manifestUrl: String): Result<com.example.update.AppReleaseInfo> =
+          Result.success(
+            com.example.update.AppReleaseInfo(
+              currentVersionName = "1.0",
+              currentVersionCode = 1,
+              latestVersionName = "1.1",
+              latestVersionCode = 2,
+              releaseNotes = "Enhanced Bangla voice cadence",
+            ),
+          )
+      }
+    val updateMgr =
+      com.example.update.AppUpdateManager(
+        context = context,
+        privacyGuard = privacy,
+        permissionRequestHandler = permHandler,
+        errorTracker = logger,
+        transport = fakeUpdateTransport,
+      )
+
+    val maxCore =
+      com.example.core.MAXCore(
+        settingsManager = settingsMgr,
+        permissionManager = permMgr,
+        privacyController = privacy,
+        permissionRequestHandler = permHandler,
+        speechManager = speechMgr,
+        ttsManager = ttsMgr,
+        memoryManager = memoryMgr,
+        wakeWordManager = wakeMgr,
+        errorLogger = logger,
+        conversationEngine = convMgr,
+        emotionEngine = emotionEngine,
+        emotionManager = emotionMgr,
+        personalityManager = personalityMgr,
+        serviceCoordinator = serviceCoord,
+        compatibilityChecker = compatChecker,
+        cameraCapability = com.example.camera.CameraManager(context, permMgr, privacy, permHandler, logger),
+        galleryCapability = com.example.gallery.GalleryManager(context, permMgr, privacy, permHandler, logger),
+        networkCapability = com.example.internet.InternetManager(
+          permMgr,
+          privacy,
+          permHandler,
+          com.example.internet.WebRequestManager(context, logger),
+          com.example.internet.SearchManager(com.example.internet.WebRequestManager(context, logger), logger),
+          com.example.internet.BrowserManager(context, com.example.internet.WebRequestManager(context, logger), logger),
+          logger,
+        ),
+        phoneCapability = com.example.phone.PhoneManager(
+          permMgr,
+          privacy,
+          permHandler,
+          com.example.phone.CallManager(context, logger),
+          com.example.phone.SMSManager(context, logger),
+          com.example.phone.ContactsManager(context, logger),
+          com.example.phone.AlarmManager(context, logger),
+          com.example.phone.TimerManager(logger),
+          com.example.phone.StopwatchManager(logger),
+          com.example.phone.CalculatorManager(logger),
+          com.example.phone.FlashlightManager(context, logger),
+          logger,
+        ),
+        appLauncherCapability = com.example.apps.AppManager(
+          permMgr,
+          privacy,
+          com.example.apps.AppLauncher(com.example.apps.AndroidAppLaunchBackend(context), logger),
+          com.example.apps.WhatsAppManager(com.example.apps.AppLauncher(com.example.apps.AndroidAppLaunchBackend(context), logger), logger),
+          com.example.apps.MessengerManager(com.example.apps.AppLauncher(com.example.apps.AndroidAppLaunchBackend(context), logger), logger),
+          com.example.apps.FacebookManager(com.example.apps.AppLauncher(com.example.apps.AndroidAppLaunchBackend(context), logger), logger),
+          com.example.apps.ChromeManager(com.example.apps.AppLauncher(com.example.apps.AndroidAppLaunchBackend(context), logger), logger),
+          com.example.apps.YouTubeManager(com.example.apps.AppLauncher(com.example.apps.AndroidAppLaunchBackend(context), logger), logger),
+          com.example.apps.GmailManager(com.example.apps.AppLauncher(com.example.apps.AndroidAppLaunchBackend(context), logger), logger),
+          com.example.apps.MapsManager(com.example.apps.AppLauncher(com.example.apps.AndroidAppLaunchBackend(context), logger), logger),
+          logger,
+        ),
+        fileCapability = com.example.files.FileManager(
+          permMgr,
+          privacy,
+          permHandler,
+          com.example.files.FileBrowser(com.example.files.AndroidFileMetadataBackend(context), logger),
+          com.example.files.PDFReader(com.example.files.AndroidPdfReaderBackend(context), logger),
+          com.example.files.DocumentReader(com.example.files.AndroidDocumentReaderBackend(context), logger),
+          com.example.files.ImageReader(com.example.files.AndroidImageReaderBackend(context), logger),
+          com.example.files.OCRManager(com.example.files.OnDeviceOcrBackend(context), logger),
+          logger,
+        ),
+        appUpdateManager = updateMgr,
+        followUpWaitTimeoutMs = 150L,
+        enableNaturalFollowUp = true,
+      )
+
+    // 1. Trigger Wake Word "MAX" -> listening prepared
+    wakeMgr.simulateWakeWordDetection()
+    assertEquals(CoreLifecycleState.LISTENING_PREPARED, maxCore.coreState.value)
+
+    // 2. Process conversational task -> enters AWAITING_FOLLOW_UP with Sanju prompt
+    maxCore.processConversationalMessage("আমি খুব খুশি!", speakAloud = false)
+    assertEquals(CoreLifecycleState.AWAITING_FOLLOW_UP, maxCore.coreState.value)
+    assertEquals(ConversationManager.FOLLOW_UP_PROMPT_SANJU_BANGLA, maxCore.followUpPrompt.value)
+
+    // 3. Natural timeout returns cleanly to Wake Mode STANDBY
+    org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+      .idleFor(300L, java.util.concurrent.TimeUnit.MILLISECONDS)
+    org.robolectric.shadows.ShadowLooper.runUiThreadTasksIncludingDelayedTasks()
+    assertEquals(CoreLifecycleState.STANDBY, maxCore.coreState.value)
+
+    // 4. Dismissal phrase immediately exits conversation to Wake Mode STANDBY
+    wakeMgr.simulateWakeWordDetection()
+    maxCore.processConversationalMessage("না ধন্যবাদ", speakAloud = false)
+    assertEquals(CoreLifecycleState.STANDBY, maxCore.coreState.value)
+
+    // 5. Background lifecycle releases mic and services cleanly
+    maxCore.handleBackgroundLifecycle(inBackground = true)
+    assertEquals(CoreLifecycleState.IDLE_DISARMED, maxCore.coreState.value)
+
+    // 6. Future Update Manager blocks automatic background checks & supports HTTPS user checks
+    val blockedUpdate = updateMgr.checkForUpdates(initiatedByUser = false)
+    assertTrue(blockedUpdate is com.example.update.UpdateState.Error)
+    privacy.setPermissionAllowed(com.example.permissions.AppPermission.INTERNET, true)
+    val allowedUpdate =
+      updateMgr.checkForUpdates(
+        initiatedByUser = true,
+        manifestUrl = "https://github.com/sanju-max-assistant/max-android/releases/latest/download/manifest.json",
+      )
+    assertTrue(allowedUpdate is com.example.update.UpdateState.UpdateAvailable)
+
+    maxCore.release()
+  }
+
+  @Test
+  fun `smart automation runs offline morning, night, daily briefing, and custom tasks safely`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val logger = ErrorLogger()
+    val permMgr = com.example.permissions.PermissionManager(context, logger)
+    val privacy = com.example.permissions.PrivacyController({ permMgr }, logger)
+    val handler = com.example.permissions.PermissionRequestHandler(permMgr, privacy, logger)
+    val memoryMgr = MemoryManager(logger).apply { initialize(true) }
+    val reminderMgr = com.example.smart.ReminderManager(context, permMgr, privacy, handler, logger)
+    val notesMgr = com.example.smart.NotesManager(memoryMgr, logger)
+
+    reminderMgr.scheduleReminder("Morning Tea", System.currentTimeMillis() + 600_000L, initiatedByUser = true)
+    notesMgr.addNote("Project", "Release MAX v1.0", alsoRememberInMemory = true, initiatedByUser = true)
+
+    val autoMgr =
+      com.example.automation.AutomationManager(
+        reminderManager = reminderMgr,
+        notesManager = notesMgr,
+        memoryController = memoryMgr,
+        errorTracker = logger,
+      )
+
+    // Blocks uninitiated background automation
+    val blocked = autoMgr.runRoutineByCategory(com.example.automation.RoutineCategory.MORNING, initiatedByUser = false)
+    assertTrue(autoMgr.state.value is com.example.automation.AutomationState.BlockedByPrivacyPolicy)
+    assertTrue(blocked.contains("explicit"))
+
+    // Runs Morning Routine, Daily Briefing & Night Routine offline cleanly
+    val morning =
+      autoMgr.handleVoiceAutomationCommand("MAX, সকালের রুটিন চালাও", preferBangla = true, initiatedByUser = true)
+    assertTrue(morning != null && morning.contains("সুপ্রভাত সানজু"))
+
+    val briefing =
+      autoMgr.runRoutineByCategory(
+        category = com.example.automation.RoutineCategory.DAILY_BRIEFING,
+        initiatedByUser = true,
+        preferBangla = true,
+        speakAloud = false,
+      )
+    assertTrue(briefing.contains("রিমাইন্ডার 1"))
+    assertTrue(briefing.contains("নোট 1"))
+
+    val scheduled =
+      autoMgr.scheduleUserTask("Evening walk", "06:00 PM", System.currentTimeMillis() + 3600_000L, "Reminder walk", true)
+    assertTrue(scheduled != null && autoMgr.scheduledTasks.value.size == 1)
+
+    autoMgr.release()
+    memoryMgr.release()
+  }
+
+  @Test
+  fun `floating assistant manager gates overlay permission and toggles minimize expand and quick voice`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val logger = ErrorLogger()
+    var overlayAllowed = false
+
+    val floatingMgr =
+      com.example.floating.FloatingAssistantManager(
+        context = context,
+        errorTracker = logger,
+        overlayPermissionProvider = { overlayAllowed },
+      )
+
+    // Never starts automatically without user tap
+    assertFalse(floatingMgr.activateFloatingAssistant(initiatedByUser = false))
+    assertTrue(floatingMgr.state.value is com.example.floating.FloatingState.Error)
+
+    // System overlay asks permission cleanly when Settings.canDrawOverlays is false
+    assertFalse(floatingMgr.activateFloatingAssistant(initiatedByUser = true, preferSystemOverlay = true))
+    assertTrue(floatingMgr.state.value is com.example.floating.FloatingState.PermissionRequired)
+
+    // In-app bubble activates, expands, triggers quick voice, minimizes, and closes cleanly
+    assertTrue(floatingMgr.activateFloatingAssistant(initiatedByUser = true, preferSystemOverlay = false))
+    assertTrue(floatingMgr.state.value is com.example.floating.FloatingState.MinimizedBubble)
+
+    floatingMgr.expandBubble()
+    assertTrue(floatingMgr.state.value is com.example.floating.FloatingState.ExpandedQuickPanel)
+
+    assertTrue(floatingMgr.triggerQuickVoiceActivation())
+    assertEquals(1, floatingMgr.quickVoiceActivationCount.value)
+
+    floatingMgr.minimizeBubble()
+    assertTrue(floatingMgr.state.value is com.example.floating.FloatingState.MinimizedBubble)
+
+    floatingMgr.closeFloatingAssistant()
+    assertTrue(floatingMgr.state.value is com.example.floating.FloatingState.Inactive)
+  }
+
   private fun com.example.phone.StopwatchManager.lapStopwatchProxyTestFix(
     sw: com.example.phone.StopwatchManager,
   ) {

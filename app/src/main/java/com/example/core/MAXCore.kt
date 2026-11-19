@@ -6,6 +6,10 @@ import com.example.apps.AppEventListener
 import com.example.apps.AppLauncherCapability
 import com.example.apps.AppManager
 import com.example.apps.AppState
+import com.example.automation.AutomationManager
+import com.example.automation.RoutineCategory
+import com.example.brain.AIBrainManager
+import com.example.brain.BrainLifecycleState
 import com.example.camera.CameraCapability
 import com.example.camera.CameraController
 import com.example.camera.CameraEventListener
@@ -27,6 +31,8 @@ import com.example.files.FileController
 import com.example.files.FileEventListener
 import com.example.files.FileManager
 import com.example.files.FileState
+import com.example.floating.FloatingAssistantManager
+import com.example.floating.FloatingState
 import com.example.gallery.GalleryCapability
 import com.example.gallery.GalleryController
 import com.example.gallery.GalleryEventListener
@@ -69,13 +75,16 @@ import com.example.service.AssistantServiceContract
 import com.example.settings.MAXSettings
 import com.example.settings.SettingsStore
 import com.example.smart.SmartEventListener
+import com.example.smart.SmartFeatureManager
 import com.example.smart.SmartFeatureState
 import com.example.smart.SmartFeaturesController
 import com.example.speech.SpeechController
+import com.example.speech.SpeechRecognitionCallback
 import com.example.speech.SpeechState
 import com.example.tts.TTSConfig
 import com.example.tts.TTSController
 import com.example.tts.TTSState
+import com.example.update.AppUpdateManager
 import com.example.utils.DeviceCompatibilityChecker
 import com.example.utils.DeviceCompatibilityProfile
 import com.example.utils.ErrorLogger
@@ -87,8 +96,10 @@ import com.example.wakeword.WakeWordState
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -98,11 +109,8 @@ import kotlinx.coroutines.launch
 /**
  * MAXCore — Central controller of the MAX Android AI Assistant.
  *
- * Coordinates all independent managers via interfaces while strictly enforcing privacy and
- * wake-word gating:
- * - In standby, only [WakeWordController] monitors for "MAX" (if armed & permitted).
- * - [SpeechController] remains dormant until [onWakeWordDetected] fires.
- * - Camera, gallery, files, location, and internet remain completely dormant.
+ * Coordinates all 16 subsystems via interfaces while strictly enforcing privacy, wake-word
+ * gating, respectful follow-up for Sanju, and automatic resource cleanup on completion/background.
  */
 class MAXCore(
   val settingsManager: SettingsStore,
@@ -134,11 +142,31 @@ class MAXCore(
   val phoneManager: PhoneController? = phoneCapability as? PhoneController,
   val appManager: AppController? = appLauncherCapability as? AppController,
   val fileManager: FileController? = fileCapability as? FileController,
-  val smartController: SmartFeaturesController? = null,
+  val smartFeatureManager: SmartFeatureManager? = null,
+  val smartController: SmartFeaturesController? = smartFeatureManager,
+  val appUpdateManager: AppUpdateManager? = null,
+  val brainManager: AIBrainManager? = null,
+  val automationManager: AutomationManager? = null,
+  val floatingAssistantManager: FloatingAssistantManager? = null,
+  private val followUpWaitTimeoutMs: Long = DEFAULT_FOLLOW_UP_TIMEOUT_MS,
+  private val enableNaturalFollowUp: Boolean = true,
   mainDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
 ) : WakeWordListener {
 
+  val aiBrainManager: AIBrainManager =
+    brainManager
+      ?: AIBrainManager(
+        emotionManager = emotionManager,
+        memoryController = memoryController,
+        personalityManager = personalityManager,
+        privacyGuard = privacyController,
+        permissionRequestHandler = permissionRequestHandler,
+        ttsController = ttsManager,
+        errorTracker = errorLogger,
+      )
+
   private val scope = CoroutineScope(SupervisorJob() + mainDispatcher)
+  private var followUpTimeoutJob: Job? = null
 
   private val _coreState = MutableStateFlow(CoreLifecycleState.UNINITIALIZED)
   val coreState: StateFlow<CoreLifecycleState> = _coreState.asStateFlow()
@@ -151,11 +179,21 @@ class MAXCore(
   private val _lastWakeWordEvent = MutableStateFlow<String?>(null)
   val lastWakeWordEvent: StateFlow<String?> = _lastWakeWordEvent.asStateFlow()
 
+  private val _followUpPrompt = MutableStateFlow<String?>(null)
+  val followUpPrompt: StateFlow<String?> = _followUpPrompt.asStateFlow()
+
+  private val _lastCompletedTask = MutableStateFlow<String?>(null)
+  val lastCompletedTask: StateFlow<String?> = _lastCompletedTask.asStateFlow()
+
+  private val _isThinking = MutableStateFlow(false)
+  val isThinking: StateFlow<Boolean> = _isThinking.asStateFlow()
+
   private var initialized = false
 
   init {
     wakeWordManager.addListener(this)
     conversationEngine.attachVoiceOutput(ttsManager)
+    (conversationEngine as? ConversationManager)?.setBrainManager(aiBrainManager)
     wireCameraAndGalleryEvents()
   }
 
@@ -338,6 +376,11 @@ class MAXCore(
     // Check explicit App Control commands first (e.g., "MAX, WhatsApp খোলো", "MAX, YouTube খোলো")
     appManager?.handleVoiceCommand(input, preferBangla = preferBangla, initiatedByUser = true)?.let { appReply ->
       return appReply
+    }
+
+    // Check Smart Automation voice commands (Morning/Night Routine, Daily Briefing)
+    automationManager?.handleVoiceAutomationCommand(input, preferBangla = preferBangla, initiatedByUser = true)?.let { autoReply ->
+      return autoReply
     }
 
     // Check Smart Features voice commands (Translation, Reminder, Notes, Calendar, Voice Notes, AI Suggestions)
@@ -674,6 +717,7 @@ class MAXCore(
     ttsManager.stopSpeaking()
     speechManager.returnToStandby()
     conversationEngine.returnToDormant()
+    aiBrainManager.clearSessionContext()
     emotionEngine.reset()
     _coreState.value = CoreLifecycleState.IDLE_DISARMED
   }
@@ -682,10 +726,15 @@ class MAXCore(
    * Returns MAX from active listening/prepared conversation back into low-power wake-word standby.
    */
   fun returnToStandby() {
+    cancelFollowUpWait()
+    _followUpPrompt.value = null
+    _isThinking.value = false
     ttsManager.stopSpeaking()
     speechManager.returnToStandby()
     conversationEngine.returnToDormant()
+    aiBrainManager.clearSessionContext()
     emotionEngine.setTone(AffectiveTone.NEUTRAL_CALM)
+    releaseTransientTaskResources()
     val compat = compatibilityChecker.inspect()
     _compatibilityProfile.value = compat
     val hasMicPerm = permissionManager.hasWakeWordAudioPermission()
@@ -699,21 +748,153 @@ class MAXCore(
     errorLogger.logInfo(MODULE_NAME, "MAX returned to ${_coreState.value}.")
   }
 
+  /**
+   * Releases transient device hardware handles cleanly after each completed task.
+   */
+  fun releaseTransientTaskResources() {
+    phoneManager?.releaseTaskResources()
+    privacyController.notifyResourcesReleased(SensitiveAction.READ_FILES)
+    privacyController.notifyResourcesReleased(SensitiveAction.READ_CALENDAR)
+  }
+
+  /**
+   * Pauses active audio/hardware cleanly when the app moves to the background, preventing silent
+   * microphone or camera retention and optimizing battery life.
+   */
+  fun handleBackgroundLifecycle(inBackground: Boolean) {
+    if (inBackground) {
+      cancelFollowUpWait()
+      _followUpPrompt.value = null
+      _isThinking.value = false
+      ttsManager.stopSpeaking()
+      speechManager.returnToStandby()
+      wakeWordManager.stopStandby()
+      cameraManager?.closeCamera("App moved to background")
+      internetManager?.cancelActiveRequest()
+      releaseTransientTaskResources()
+      serviceCoordinator.markStopped()
+      if (_coreState.value == CoreLifecycleState.LISTENING_PREPARED ||
+        _coreState.value == CoreLifecycleState.AWAITING_FOLLOW_UP ||
+        _coreState.value == CoreLifecycleState.STANDBY
+      ) {
+        _coreState.value = CoreLifecycleState.IDLE_DISARMED
+      }
+      errorLogger.logInfo(MODULE_NAME, "Background lifecycle: released microphone & task resources safely.")
+    } else if (initialized) {
+      serviceCoordinator.markOnDemandReady()
+      permissionManager.refreshAll(privacyController.policy.value)
+      scope.launch {
+        val settings = runCatching { settingsManager.settingsFlow.first() }.getOrDefault(MAXSettings())
+        val compat = compatibilityChecker.inspect()
+        _compatibilityProfile.value = compat
+        if (settings.wakeWordEnabled && permissionManager.hasWakeWordAudioPermission() && compat.hasMicrophone) {
+          armWakeWordStandby()
+        }
+      }
+    }
+  }
+
+  /**
+   * Starts or resumes active voice listening explicitly triggered by Sanju's tap on the Home mic.
+   */
+  fun activateManualVoiceSession() {
+    cancelFollowUpWait()
+    _followUpPrompt.value = null
+    onWakeWordDetected(WakeWordConfig.DEFAULT_KEYWORD, 1.0f, System.currentTimeMillis())
+  }
+
+  /**
+   * Ends follow-up immediately when Sanju indicates nothing else is needed and returns to Wake Mode.
+   */
+  fun finishFollowUpAndReturnToWakeMode(speakFarewell: Boolean = true) {
+    cancelFollowUpWait()
+    val activeLanguage = ttsManager.voiceConfig.value.language
+    val conv = conversationEngine as? ConversationManager
+    if (speakFarewell && conv != null) {
+      val farewell = conv.craftWakeStandbyFarewell(activeLanguage)
+      conv.deliverAssistantResponse(farewell, com.example.tts.SpeechStyle.CARING)
+    }
+    returnToStandby()
+  }
+
   fun processConversationalMessage(
     userText: String,
     speakAloud: Boolean = true,
   ): String {
+    cancelFollowUpWait()
+    _followUpPrompt.value = null
+    _isThinking.value = true
+
     val activeLanguage = ttsManager.voiceConfig.value.language
     val convManager = conversationEngine as? ConversationManager
-    return if (convManager != null) {
-      val (_, reply) = convManager.processUserMessage(userText, activeLanguage, speakAloud)
-      reply
-    } else {
-      val (emotionState, reply) = personalityManager.craftPersonalizedReply(userText, activeLanguage)
-      ttsManager.applyEmotionalVoiceProfile(emotionState.voiceProfile)
-      conversationEngine.deliverAssistantResponse(reply, emotionState.voiceProfile.speechStyle)
-      reply
+
+    if (convManager != null && convManager.isDismissalOrDoneCue(userText)) {
+      val farewell = convManager.craftWakeStandbyFarewell(activeLanguage)
+      if (speakAloud) {
+        convManager.deliverAssistantResponse(farewell, com.example.tts.SpeechStyle.CARING)
+      }
+      _lastCompletedTask.value =
+        if (activeLanguage == com.example.tts.VoiceLanguage.ENGLISH_US) "Returned to Wake Mode"
+        else "ওয়েক মোডে ফিরে এসেছে"
+      _isThinking.value = false
+      returnToStandby()
+      return farewell
     }
+
+    val reply =
+      if (convManager != null) {
+        val (_, response) = convManager.processUserMessage(userText, activeLanguage, speakAloud)
+        response
+      } else {
+        val (emotionState, response) = personalityManager.craftPersonalizedReply(userText, activeLanguage)
+        ttsManager.applyEmotionalVoiceProfile(emotionState.voiceProfile)
+        conversationEngine.deliverAssistantResponse(response, emotionState.voiceProfile.speechStyle)
+        response
+      }
+
+    _lastCompletedTask.value = userText.trim().take(52)
+    releaseTransientTaskResources()
+    _isThinking.value = false
+
+    val awaitingClarification =
+      aiBrainManager.brainState.value is BrainLifecycleState.AwaitingClarification ||
+        aiBrainManager.brainState.value is BrainLifecycleState.AskingInternetConsent
+
+    if (awaitingClarification) {
+      // Keep listening naturally for Sanju's answer to the clarifying / permission question.
+      _coreState.value = CoreLifecycleState.LISTENING_PREPARED
+    } else if (enableNaturalFollowUp) {
+      beginNaturalFollowUpWait(activeLanguage = activeLanguage, speakAloud = speakAloud)
+    }
+    return reply
+  }
+
+  private fun beginNaturalFollowUpWait(
+    activeLanguage: com.example.tts.VoiceLanguage,
+    speakAloud: Boolean,
+  ) {
+    val convManager = conversationEngine as? ConversationManager ?: return
+    val followUp = convManager.craftFollowUpPrompt(activeLanguage)
+    _followUpPrompt.value = followUp
+    _coreState.value = CoreLifecycleState.AWAITING_FOLLOW_UP
+    if (speakAloud) {
+      ttsManager.speak(followUp, com.example.tts.SpeechStyle.CARING)
+    }
+
+    followUpTimeoutJob =
+      scope.launch {
+        delay(followUpWaitTimeoutMs)
+        errorLogger.logInfo(
+          MODULE_NAME,
+          "No follow-up response within ${followUpWaitTimeoutMs}ms; returning calmly to Wake Mode.",
+        )
+        returnToStandby()
+      }
+  }
+
+  private fun cancelFollowUpWait() {
+    followUpTimeoutJob?.cancel()
+    followUpTimeoutJob = null
   }
 
   fun saveStructuredMemory(
@@ -855,10 +1036,12 @@ class MAXCore(
   // --- WakeWordListener implementation ---
 
   override fun onWakeWordDetected(keyword: String, confidence: Float, detectedAtMillis: Long) {
-    // Step 2 core contract:
-    // 1. Notify MAXCore
-    // 2. Activate assistant listening state
-    // 3. Prepare for voice conversation (without prematurely recording audio)
+    // Final Wake Word Flow:
+    // 1. Notify MAXCore & pause low-power wake listener
+    // 2. Activate assistant listening state & prepare SpeechRecognizer
+    // 3. Deliver recognized utterance directly into ConversationManager & post-task follow-up
+    cancelFollowUpWait()
+    _followUpPrompt.value = null
     wakeWordManager.pauseForConversation()
     _coreState.value = CoreLifecycleState.LISTENING_PREPARED
     _lastWakeWordEvent.value = "Detected '$keyword' (${(confidence * 100).toInt()}%)"
@@ -867,6 +1050,24 @@ class MAXCore(
     speechManager.prepareForVoiceConversation(triggerKeyword = keyword)
     conversationEngine.prepareSession(triggerKeyword = keyword)
     ttsManager.prepareVoiceResponseSession()
+
+    if (permissionManager.hasWakeWordAudioPermission()) {
+      val langTag = ttsManager.voiceConfig.value.language.tag
+      speechManager.startRecognitionSession(
+        languageTag = langTag,
+        callback =
+          object : SpeechRecognitionCallback {
+            override fun onFinalTranscript(text: String) {
+              processConversationalMessage(text, speakAloud = true)
+            }
+
+            override fun onSpeechTimeoutOrError(reason: String) {
+              errorLogger.logInfo(MODULE_NAME, "Speech capture paused cleanly: $reason")
+            }
+          },
+      )
+    }
+
     memoryManager.remember(
       MemoryCategory.SYSTEM_SESSION,
       "Wake word '$keyword' activated listening state.",
@@ -874,13 +1075,15 @@ class MAXCore(
 
     errorLogger.logInfo(
       MODULE_NAME,
-      "Wake word '$keyword' detected -> Assistant listening state active & voice conversation prepared.",
+      "Wake word '$keyword' detected -> Assistant listening & speech recognition prepared.",
     )
   }
 
   override fun onWakeWordStateChanged(state: WakeWordState) {
     if (state is WakeWordState.PermissionRequired || state is WakeWordState.UnsupportedFallback) {
-      if (_coreState.value != CoreLifecycleState.LISTENING_PREPARED) {
+      if (_coreState.value != CoreLifecycleState.LISTENING_PREPARED &&
+        _coreState.value != CoreLifecycleState.AWAITING_FOLLOW_UP
+      ) {
         _coreState.value = CoreLifecycleState.IDLE_DISARMED
       }
     }
@@ -955,9 +1158,43 @@ class MAXCore(
         privacyNote = "Local synthesis engine only; no cloud voice streaming.",
       ),
       ModuleDescriptor(
+        packageName = "brain/",
+        title = "AIBrainManager",
+        roleSummary = "IntentAnalyzer, ContextManager, DecisionEngine & ResponsePlanner thinking before every reply.",
+        category = ModuleCategory.VOICE_AND_COGNITION,
+        readiness =
+          when (aiBrainManager.brainState.value) {
+            is BrainLifecycleState.Thinking,
+            is BrainLifecycleState.AwaitingClarification, -> ModuleReadiness.ACTIVE_LISTENING
+            else -> ModuleReadiness.READY
+          },
+        privacyNote = "Offline-first reasoning; asks permission before using internet and never leaks context.",
+      ),
+      ModuleDescriptor(
+        packageName = "automation/",
+        title = "AutomationManager",
+        roleSummary = "Morning & Night routines, Daily Briefing & scheduled offline tasks for Sanju.",
+        category = ModuleCategory.VOICE_AND_COGNITION,
+        readiness = ModuleReadiness.READY,
+        privacyNote = "Runs strictly offline on user triggers with zero idle polling.",
+      ),
+      ModuleDescriptor(
+        packageName = "floating/",
+        title = "FloatingAssistantManager",
+        roleSummary = "User-activated floating quick-voice bubble and system overlay service.",
+        category = ModuleCategory.INFRASTRUCTURE,
+        readiness =
+          when (floatingAssistantManager?.state?.value) {
+            is FloatingState.MinimizedBubble,
+            is FloatingState.ExpandedQuickPanel, -> ModuleReadiness.ACTIVE_LISTENING
+            else -> ModuleReadiness.STANDBY
+          },
+        privacyNote = "Appears only on tap; never hides mic/camera recording.",
+      ),
+      ModuleDescriptor(
         packageName = "conversation/",
         title = "ConversationManager",
-        roleSummary = "Human-like multi-turn dialogue orchestrator connected to EmotionManager & TTS.",
+        roleSummary = "Human-like multi-turn dialogue orchestrator connected to AIBrainManager, EmotionManager & TTS.",
         category = ModuleCategory.VOICE_AND_COGNITION,
         readiness =
           if (_coreState.value == CoreLifecycleState.LISTENING_PREPARED) {
@@ -1065,7 +1302,7 @@ class MAXCore(
       ),
       ModuleDescriptor(
         packageName = "smart/",
-        title = "SmartFeaturesHub",
+        title = "SmartFeatureManager",
         roleSummary = "Offline Translation, Reminders, Notes, Calendar, Voice Notes & Mood-aware AI Suggestions.",
         category = ModuleCategory.VOICE_AND_COGNITION,
         readiness =
@@ -1075,6 +1312,14 @@ class MAXCore(
             else -> ModuleReadiness.READY
           },
         privacyNote = "Connected to Emotion, Memory, Permission & TTS; zero cloud file uploads.",
+      ),
+      ModuleDescriptor(
+        packageName = "update/",
+        title = "AppUpdateManager",
+        roleSummary = "Play-compliant HTTPS release manifest checker for future MAX updates.",
+        category = ModuleCategory.INFRASTRUCTURE,
+        readiness = ModuleReadiness.READY,
+        privacyNote = "User-triggered only; zero dynamic code loading.",
       ),
       ModuleDescriptor(
         packageName = "internet/",
@@ -1119,6 +1364,7 @@ class MAXCore(
   }
 
   fun release() {
+    cancelFollowUpWait()
     wakeWordManager.removeListener(this)
     wakeWordManager.release()
     cameraManager?.release()
@@ -1127,9 +1373,14 @@ class MAXCore(
     phoneManager?.release()
     appManager?.release()
     fileManager?.release()
+    smartFeatureManager?.release() ?: smartController?.release()
+    automationManager?.release()
+    floatingAssistantManager?.release()
+    appUpdateManager?.release()
     speechManager.release()
     ttsManager.release()
     conversationEngine.release()
+    aiBrainManager.release()
     memoryManager.release()
     serviceCoordinator.markStopped()
     scope.cancel()
@@ -1137,5 +1388,6 @@ class MAXCore(
 
   companion object {
     private const val MODULE_NAME = "MAXCore"
+    const val DEFAULT_FOLLOW_UP_TIMEOUT_MS = 8_000L
   }
 }

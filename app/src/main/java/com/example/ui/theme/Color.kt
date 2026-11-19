@@ -32,3 +32,9 @@ val CyanLightContainer = Color(0xFFDDF3FE)
 val CyanLightOnContainer = Color(0xFF082F49)
 val IndigoLightSecondary = Color(0xFF4F46E5)
 val EmeraldLightReady = Color(0xFF059669)
+
+// Home Hero & Mic Gradient Tokens
+val GradientRoyalBlue = Color(0xFF2563EB)
+val GradientElectricPurple = Color(0xFF7C3AED)
+val GradientCyanGlow = Color(0xFF38BDF8)
+

@@ -2,19 +2,35 @@ package com.example.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Minimize
+import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -22,6 +38,7 @@ import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -29,7 +46,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -38,8 +59,12 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.apps.SupportedApp
+import com.example.floating.FloatingState
 import com.example.permissions.AppPermission
 import com.example.ui.navigation.MAXDestination
+import com.example.ui.theme.GradientElectricPurple
+import com.example.ui.theme.GradientRoyalBlue
 import com.example.ui.screens.AppsControlScreen
 import com.example.ui.screens.CoreDashboardScreen
 import com.example.ui.screens.DiagnosticsScreen
@@ -91,7 +116,7 @@ fun MAXAppShell(viewModel: MAXViewModel) {
               val perm = pending.permission
               val manifestPerm = perm.manifestPermission
               val launchOs = pending.canLaunchSystemPrompt && manifestPerm != null
-              if (launchOs && manifestPerm != null) {
+              if (launchOs) {
                 awaitingOsPermission = perm
                 viewModel.dismissPendingPermissionRequest()
                 runtimePermissionLauncher.launch(manifestPerm)
@@ -293,6 +318,26 @@ fun MAXAppShell(viewModel: MAXViewModel) {
             navController = navController,
             startDestination = MAXDestination.CORE.route,
             modifier = Modifier.fillMaxSize(),
+            enterTransition = {
+              androidx.compose.animation.fadeIn(
+                animationSpec = androidx.compose.animation.core.tween(220),
+              )
+            },
+            exitTransition = {
+              androidx.compose.animation.fadeOut(
+                animationSpec = androidx.compose.animation.core.tween(180),
+              )
+            },
+            popEnterTransition = {
+              androidx.compose.animation.fadeIn(
+                animationSpec = androidx.compose.animation.core.tween(220),
+              )
+            },
+            popExitTransition = {
+              androidx.compose.animation.fadeOut(
+                animationSpec = androidx.compose.animation.core.tween(180),
+              )
+            },
           ) {
             composable(MAXDestination.CORE.route) {
               CoreDashboardScreen(
@@ -311,10 +356,44 @@ fun MAXAppShell(viewModel: MAXViewModel) {
                 onStopSpeaking = viewModel::stopSpeaking,
                 onSelectLanguage = viewModel::setVoiceLanguage,
                 onSelectStyle = viewModel::setSpeechStyle,
+                onActivateManualVoiceSession = viewModel::activateManualVoiceSession,
+                onFinishFollowUpToWakeMode = viewModel::finishFollowUpToWakeMode,
+                onOpenCameraQuick = {
+                  navController.navigate(MAXDestination.VISION.route) {
+                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                    launchSingleTop = true
+                    restoreState = true
+                  }
+                },
+                onOpenGalleryQuick = {
+                  navController.navigate(MAXDestination.VISION.route) {
+                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                    launchSingleTop = true
+                    restoreState = true
+                  }
+                },
                 onOpenInternetScreen = { navController.navigate("max_internet") },
                 onOpenPhoneScreen = { navController.navigate("max_phone") },
+                onOpenWhatsAppQuick = {
+                  viewModel.requestOpenApp(SupportedApp.WHATSAPP, requireConfirmation = true)
+                },
                 onOpenAppsScreen = { navController.navigate("max_apps") },
                 onOpenFilesSmartScreen = { navController.navigate("max_files_smart") },
+                onOpenSettingsQuick = {
+                  navController.navigate(MAXDestination.SETTINGS.route) {
+                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                    launchSingleTop = true
+                    restoreState = true
+                  }
+                },
+                onRunRoutine = viewModel::runRoutine,
+                onToggleFloatingBubble = {
+                  if (uiState.floatingState is FloatingState.Inactive) {
+                    viewModel.activateFloatingBubble(preferSystemOverlay = false)
+                  } else {
+                    viewModel.closeFloatingBubble()
+                  }
+                },
               )
             }
             composable("max_files_smart") {
@@ -447,7 +526,95 @@ fun MAXAppShell(viewModel: MAXViewModel) {
                 onSetTtsPitch = viewModel::setTtsPitch,
                 onSetMemoryRetentionEnabled = viewModel::setMemoryRetentionEnabled,
                 onSetDarkThemePreferred = viewModel::setDarkThemePreferred,
+                onCheckForUpdates = viewModel::checkForUpdates,
+                onOpenReleasePage = { url -> viewModel.openVerifiedUpdateUrl(url) },
+                onToggleFloatingBubble = {
+                  if (uiState.floatingState is FloatingState.Inactive) {
+                    viewModel.activateFloatingBubble(preferSystemOverlay = false)
+                  } else {
+                    viewModel.closeFloatingBubble()
+                  }
+                },
+                onRequestOverlayPermission = { viewModel.requestOverlayPermissionSettings() },
               )
+            }
+          }
+        }
+      }
+
+      // Floating Assistant Bubble Overlay (shown strictly when activated by the user)
+      if (uiState.floatingState is FloatingState.MinimizedBubble ||
+        uiState.floatingState is FloatingState.ExpandedQuickPanel
+      ) {
+        Box(
+          modifier = Modifier.fillMaxSize().padding(end = 16.dp, bottom = 92.dp),
+          contentAlignment = Alignment.BottomEnd,
+        ) {
+          AnimatedContent(
+            targetState = uiState.floatingState is FloatingState.ExpandedQuickPanel,
+            label = "floating_max_bubble",
+          ) { expanded ->
+            if (!expanded) {
+              Surface(
+                onClick = { viewModel.expandFloatingBubble(false) },
+                shape = CircleShape,
+                color = Color.Transparent,
+                modifier = Modifier.size(58.dp).shadow(8.dp, CircleShape).testTag("floating_bubble_minimized"),
+              ) {
+                Box(
+                  modifier =
+                    Modifier.fillMaxSize()
+                      .background(Brush.linearGradient(listOf(GradientRoyalBlue, GradientElectricPurple))),
+                  contentAlignment = Alignment.Center,
+                ) {
+                  Icon(
+                    imageVector = Icons.Filled.Mic,
+                    contentDescription = "Expand Floating MAX Assistant",
+                    tint = Color.White,
+                  )
+                }
+              }
+            } else {
+              Card(
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                modifier = Modifier.testTag("floating_bubble_expanded"),
+              ) {
+                Row(
+                  modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                  horizontalArrangement = Arrangement.spacedBy(6.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                ) {
+                  FilledTonalIconButton(
+                    onClick = { viewModel.triggerFloatingQuickVoice() },
+                    modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp).testTag("floating_quick_voice_btn"),
+                  ) {
+                    Icon(Icons.Filled.Mic, contentDescription = "Quick Voice Activation")
+                  }
+                  IconButton(
+                    onClick = {
+                      navController.navigate(MAXDestination.CORE.route) { launchSingleTop = true }
+                      viewModel.minimizeFloatingBubble()
+                    },
+                    modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+                  ) {
+                    Icon(Icons.Filled.OpenInFull, contentDescription = "Restore Home")
+                  }
+                  IconButton(
+                    onClick = { viewModel.minimizeFloatingBubble() },
+                    modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+                  ) {
+                    Icon(Icons.Filled.Minimize, contentDescription = "Minimize Bubble")
+                  }
+                  IconButton(
+                    onClick = { viewModel.closeFloatingBubble() },
+                    modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+                  ) {
+                    Icon(Icons.Filled.Close, contentDescription = "Close Floating Bubble")
+                  }
+                }
+              }
             }
           }
         }

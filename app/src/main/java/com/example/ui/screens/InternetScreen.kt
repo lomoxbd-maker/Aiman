@@ -18,13 +18,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Summarize
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -356,7 +356,6 @@ fun InternetScreen(
                 is InternetState.OfflineOrUnavailable -> state.reason
                 is InternetState.BlockedByPrivacyPolicy -> state.reason
                 is InternetState.PermissionRequired -> state.explanation
-                else -> ""
               }
             Surface(
               shape = RoundedCornerShape(14.dp),
@@ -407,7 +406,7 @@ fun InternetScreen(
                   onClick = { onSpeakText(summary, SpeechStyle.CALM) },
                   modifier = Modifier.weight(1f).testTag("internet_speak_summary_button"),
                 ) {
-                  Icon(Icons.Filled.VolumeUp, contentDescription = null)
+                  Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null)
                   Spacer(Modifier.width(6.dp))
                   Text("Speak Summary")
                 }

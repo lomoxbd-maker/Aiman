@@ -19,9 +19,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Apps
-import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Forum
@@ -460,7 +460,7 @@ fun AppsControlScreen(
 
 private fun iconForApp(app: SupportedApp): ImageVector =
   when (app) {
-    SupportedApp.WHATSAPP -> Icons.Filled.Chat
+    SupportedApp.WHATSAPP -> Icons.AutoMirrored.Filled.Chat
     SupportedApp.MESSENGER -> Icons.Filled.Forum
     SupportedApp.FACEBOOK -> Icons.Filled.Share
     SupportedApp.CHROME -> Icons.Filled.Public

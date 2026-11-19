@@ -25,4 +25,14 @@ class MainActivity : ComponentActivity() {
       MAXAppShell(viewModel = maxViewModel)
     }
   }
+
+  override fun onStart() {
+    super.onStart()
+    maxViewModel.onAppLifecycleChanged(inBackground = false)
+  }
+
+  override fun onStop() {
+    super.onStop()
+    maxViewModel.onAppLifecycleChanged(inBackground = true)
+  }
 }

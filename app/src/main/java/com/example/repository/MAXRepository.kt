@@ -154,9 +154,44 @@ interface MAXRepository {
   val logs: StateFlow<List<LogEntry>>
   val compatibilityProfile: StateFlow<DeviceCompatibilityProfile>
   val lastWakeWordEvent: StateFlow<String?>
+  val followUpPrompt: StateFlow<String?>
+  val lastCompletedTask: StateFlow<String?>
+  val isThinking: StateFlow<Boolean>
+  val updateState: StateFlow<com.example.update.UpdateState>
+  val brainState: StateFlow<com.example.brain.BrainLifecycleState>
+  val routines: StateFlow<List<com.example.automation.AutomationRoutine>>
+  val automationState: StateFlow<com.example.automation.AutomationState>
+  val lastBriefing: StateFlow<com.example.automation.DailyBriefingSummary?>
+  val floatingState: StateFlow<com.example.floating.FloatingState>
   val settingsFlow: Flow<MAXSettings>
 
   fun initializeCore()
+
+  fun activateManualVoiceSession()
+
+  fun finishFollowUpToWakeMode()
+
+  fun handleBackgroundLifecycle(inBackground: Boolean)
+
+  fun checkForUpdates()
+
+  fun openVerifiedUpdateUrl(url: String): Boolean
+
+  fun runRoutine(category: com.example.automation.RoutineCategory): String
+
+  fun toggleRoutineEnabled(routineId: String)
+
+  fun activateFloatingBubble(preferSystemOverlay: Boolean = false): Boolean
+
+  fun minimizeFloatingBubble()
+
+  fun expandFloatingBubble(isVoiceArmed: Boolean = false)
+
+  fun triggerFloatingQuickVoice(): Boolean
+
+  fun closeFloatingBubble()
+
+  fun requestOverlayPermissionSettings(): Boolean
 
   fun armWakeWordStandby()
 
@@ -491,10 +526,89 @@ class MAXRepositoryImpl(
   override val compatibilityProfile: StateFlow<DeviceCompatibilityProfile> =
     maxCore.compatibilityProfile
   override val lastWakeWordEvent: StateFlow<String?> = maxCore.lastWakeWordEvent
+  override val followUpPrompt: StateFlow<String?> = maxCore.followUpPrompt
+  override val lastCompletedTask: StateFlow<String?> = maxCore.lastCompletedTask
+  override val isThinking: StateFlow<Boolean> = maxCore.isThinking
+  override val updateState: StateFlow<com.example.update.UpdateState> =
+    maxCore.appUpdateManager?.state ?: MutableStateFlow(com.example.update.UpdateState.Idle("1.0", 1))
+  override val brainState: StateFlow<com.example.brain.BrainLifecycleState> =
+    maxCore.aiBrainManager.brainState
+  override val routines: StateFlow<List<com.example.automation.AutomationRoutine>> =
+    maxCore.automationManager?.routines ?: MutableStateFlow(emptyList())
+  override val automationState: StateFlow<com.example.automation.AutomationState> =
+    maxCore.automationManager?.state ?: MutableStateFlow(com.example.automation.AutomationState.Idle)
+  override val lastBriefing: StateFlow<com.example.automation.DailyBriefingSummary?> =
+    maxCore.automationManager?.lastBriefing ?: MutableStateFlow(null)
+  override val floatingState: StateFlow<com.example.floating.FloatingState> =
+    maxCore.floatingAssistantManager?.state ?: MutableStateFlow(com.example.floating.FloatingState.Inactive)
   override val settingsFlow: Flow<MAXSettings> = maxCore.settingsManager.settingsFlow
 
   override fun initializeCore() {
     maxCore.initialize()
+  }
+
+  override fun activateManualVoiceSession() {
+    maxCore.activateManualVoiceSession()
+  }
+
+  override fun finishFollowUpToWakeMode() {
+    maxCore.finishFollowUpAndReturnToWakeMode()
+  }
+
+  override fun handleBackgroundLifecycle(inBackground: Boolean) {
+    maxCore.handleBackgroundLifecycle(inBackground)
+  }
+
+  override fun checkForUpdates() {
+    val preferBangla = maxCore.ttsManager.voiceConfig.value.language != com.example.tts.VoiceLanguage.ENGLISH_US
+    maxCore.appUpdateManager?.checkForUpdates(initiatedByUser = true, preferBangla = preferBangla)
+  }
+
+  override fun openVerifiedUpdateUrl(url: String): Boolean {
+    return maxCore.appUpdateManager?.openVerifiedReleasePage(url) ?: false
+  }
+
+  override fun runRoutine(category: com.example.automation.RoutineCategory): String {
+    val preferBangla = maxCore.ttsManager.voiceConfig.value.language != com.example.tts.VoiceLanguage.ENGLISH_US
+    return maxCore.automationManager?.runRoutineByCategory(
+      category = category,
+      initiatedByUser = true,
+      preferBangla = preferBangla,
+      speakAloud = true,
+    ).orEmpty()
+  }
+
+  override fun toggleRoutineEnabled(routineId: String) {
+    maxCore.automationManager?.toggleRoutineEnabled(routineId)
+  }
+
+  override fun activateFloatingBubble(preferSystemOverlay: Boolean): Boolean {
+    return maxCore.floatingAssistantManager?.activateFloatingAssistant(
+      initiatedByUser = true,
+      preferSystemOverlay = preferSystemOverlay,
+    ) ?: false
+  }
+
+  override fun minimizeFloatingBubble() {
+    maxCore.floatingAssistantManager?.minimizeBubble()
+  }
+
+  override fun expandFloatingBubble(isVoiceArmed: Boolean) {
+    maxCore.floatingAssistantManager?.expandBubble(isVoiceArmed)
+  }
+
+  override fun triggerFloatingQuickVoice(): Boolean {
+    val ok = maxCore.floatingAssistantManager?.triggerQuickVoiceActivation() ?: false
+    if (ok) maxCore.activateManualVoiceSession()
+    return ok
+  }
+
+  override fun closeFloatingBubble() {
+    maxCore.floatingAssistantManager?.closeFloatingAssistant()
+  }
+
+  override fun requestOverlayPermissionSettings(): Boolean {
+    return maxCore.floatingAssistantManager?.requestOverlayPermissionSettings() ?: false
   }
 
   override fun armWakeWordStandby() {

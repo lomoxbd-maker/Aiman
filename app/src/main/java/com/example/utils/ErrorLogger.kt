@@ -73,8 +73,8 @@ class ErrorLogger : ErrorTracker {
       )
 
     when (level) {
-      LogLevel.INFO -> Log.i(TAG, "[$module] $message")
-      LogLevel.WARNING -> Log.w(TAG, "[$module] $message")
+      LogLevel.INFO -> if (com.example.BuildConfig.DEBUG) Log.i(TAG, "[$module] $message")
+      LogLevel.WARNING -> if (com.example.BuildConfig.DEBUG) Log.w(TAG, "[$module] $message")
       LogLevel.ERROR -> Log.e(TAG, "[$module] $message", throwable)
     }
 

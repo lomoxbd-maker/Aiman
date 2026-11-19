@@ -38,7 +38,8 @@ class PersonalityManager(
       emotionManager.setEmotion(EmotionType.RESPECTFUL, "Warm greeting")
       val pool = if (isEnglish) ENGLISH_GREETINGS else BANGLA_GREETINGS
       val line = pickNonRepeating(pool)
-      val personalized = formatWithName(line, userName)
+      val companionName = userName ?: if (isEnglish) DEFAULT_NAME_EN else DEFAULT_NAME_BN
+      val personalized = formatWithName(line, companionName)
       return emotionManager.emotionState.value to personalized
     }
 
@@ -46,7 +47,8 @@ class PersonalityManager(
       emotionManager.setEmotion(EmotionType.CARING, "Warm farewell")
       val pool = if (isEnglish) ENGLISH_FAREWELLS else BANGLA_FAREWELLS
       val line = pickNonRepeating(pool)
-      val personalized = formatWithName(line, userName)
+      val companionName = userName ?: if (isEnglish) DEFAULT_NAME_EN else DEFAULT_NAME_BN
+      val personalized = formatWithName(line, companionName)
       return emotionManager.emotionState.value to personalized
     }
 
@@ -127,6 +129,9 @@ class PersonalityManager(
   }
 
   companion object {
+    private const val DEFAULT_NAME_BN = "সানজু"
+    private const val DEFAULT_NAME_EN = "Sanju"
+
     private val BANGLA_GREETINGS =
       listOf(
         "নমস্কার! আমি ম্যাক্স। আজ আপনাকে কীভাবে সাহায্য করতে পারি?",

@@ -1,5 +1,6 @@
 package com.example.conversation
 
+import com.example.brain.AIBrainManager
 import com.example.emotion.EmotionControllerContract
 import com.example.emotion.EmotionState
 import com.example.emotion.PersonalityController
@@ -16,7 +17,8 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * ConversationManager — Orchestrates natural human-like conversation turns between
- * [MemoryController], [EmotionControllerContract], [PersonalityController], and [TTSController].
+ * [AIBrainManager], [MemoryController], [EmotionControllerContract], [PersonalityController],
+ * and [TTSController].
  *
  * Handles Bangla Memory Commands directly during user conversation ("MAX, এটা মনে রাখো",
  * "MAX, এটা ভুলে যাও", "MAX, আমার Memory দেখাও", "MAX, সব Memory মুছে দাও").
@@ -31,6 +33,7 @@ class ConversationManager(
 
   private var voiceOutput: TTSController? = null
   private var visionCommandHandler: ((String) -> String?)? = null
+  private var brainManager: AIBrainManager? = null
 
   private val _state = MutableStateFlow(ConversationState.DORMANT)
   override val state: StateFlow<ConversationState> = _state.asStateFlow()
@@ -44,6 +47,10 @@ class ConversationManager(
 
   fun setVisionCommandHandler(handler: ((String) -> String?)?) {
     visionCommandHandler = handler
+  }
+
+  fun setBrainManager(brain: AIBrainManager?) {
+    brainManager = brain
   }
 
   override fun prepareSession(triggerKeyword: String) {
@@ -72,7 +79,7 @@ class ConversationManager(
     }
 
     val memCommand = memoryController?.parseCommand(cleanInput)
-    if (memCommand != null && memoryController != null) {
+    if (memCommand != null) {
       val result = memoryController.executeCommand(memCommand)
       val reply =
         if (language == VoiceLanguage.ENGLISH_US) result.messageEnglish else result.messageBangla
@@ -87,6 +94,22 @@ class ConversationManager(
         voiceOutput?.speak(reply, currentEmotion.voiceProfile.speechStyle)
       }
       return currentEmotion to reply
+    }
+
+    val activeBrain = brainManager
+    if (activeBrain != null) {
+      val brainOutcome =
+        activeBrain.thinkAndPlan(
+          userInput = cleanInput,
+          language = language,
+          actionExecutor = visionCommandHandler,
+        )
+      voiceOutput?.applyEmotionalVoiceProfile(brainOutcome.emotionState.voiceProfile)
+      appendTurn(speaker = "MAX", content = brainOutcome.reply)
+      if (speakAloud) {
+        voiceOutput?.speak(brainOutcome.reply, brainOutcome.emotionState.voiceProfile.speechStyle)
+      }
+      return brainOutcome.emotionState to brainOutcome.reply
     }
 
     val visionReply = visionCommandHandler?.invoke(cleanInput)
@@ -138,6 +161,55 @@ class ConversationManager(
     voiceOutput?.speak(trimmed, style)
   }
 
+  /**
+   * Produces the calm post-task follow-up question for Sanju after completing any request.
+   */
+  fun craftFollowUpPrompt(language: VoiceLanguage): String {
+    val savedName = memoryController?.getUserName()
+    return when {
+      language == VoiceLanguage.ENGLISH_US -> {
+        val name = savedName?.takeIf { it.isNotBlank() } ?: "Sanju"
+        "$name, is there anything else I can help you with?"
+      }
+      !savedName.isNullOrBlank() && !savedName.equals("সানজু", ignoreCase = true) && !savedName.equals("Sanju", ignoreCase = true) ->
+        "$savedName, আপনাকে কি আর কোনোভাবে সাহায্য করতে পারি?"
+      else -> FOLLOW_UP_PROMPT_SANJU_BANGLA
+    }
+  }
+
+  fun isDismissalOrDoneCue(userText: String): Boolean {
+    val lower = userText.trim().lowercase()
+    if (lower.isBlank()) return false
+    val exactOrContained =
+      listOf(
+        "না ধন্যবাদ",
+        "না আর কিছু না",
+        "আর কিছু না",
+        "লাগবে না",
+        "প্রয়োজন নেই",
+        "থাক এখন",
+        "no thanks",
+        "nothing else",
+        "that is all",
+        "that's all",
+        "i'm good",
+        "all good",
+        "stop listening",
+      )
+    if (exactOrContained.any { lower.contains(it) }) return true
+    return lower == "না" || lower == "no" || lower == "nope" || lower == "done" || lower == "ok bye"
+  }
+
+  fun craftWakeStandbyFarewell(language: VoiceLanguage): String {
+    val savedName = memoryController?.getUserName()
+    val name = savedName?.takeIf { it.isNotBlank() } ?: if (language == VoiceLanguage.ENGLISH_US) "Sanju" else "সানজু"
+    return if (language == VoiceLanguage.ENGLISH_US) {
+      "Alright $name, I will wait calmly in Wake Mode. Just say MAX whenever you need me."
+    } else {
+      "ঠিক আছে $name, আমি ওয়েক মোডে অপেক্ষায় রইলাম। প্রয়োজন হলেই MAX বলে ডাকবেন।"
+    }
+  }
+
   override fun returnToDormant() {
     _state.value = ConversationState.DORMANT
   }
@@ -145,6 +217,8 @@ class ConversationManager(
   override fun release() {
     voiceOutput = null
     visionCommandHandler = null
+    brainManager?.release()
+    brainManager = null
     _recentTurns.value = emptyList()
     _state.value = ConversationState.DORMANT
   }
@@ -163,5 +237,7 @@ class ConversationManager(
   companion object {
     private const val MODULE_NAME = "ConversationManager"
     private const val MAX_RECENT_TURNS = 16
+    const val FOLLOW_UP_PROMPT_SANJU_BANGLA = "সানজু, আপনাকে কি আর কোনোভাবে সাহায্য করতে পারি?"
+    const val FOLLOW_UP_PROMPT_SANJU_ENGLISH = "Sanju, is there anything else I can help you with?"
   }
 }

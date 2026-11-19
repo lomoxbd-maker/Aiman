@@ -10,6 +10,8 @@ enum class CoreLifecycleState {
   STANDBY,
   /** "MAX" wake word detected; assistant listening state active & voice conversation prepared. */
   LISTENING_PREPARED,
+  /** Task finished; MAX respectfully asked if Sanju needs anything else before returning to Wake Mode. */
+  AWAITING_FOLLOW_UP,
   /** Disarmed idle state (e.g., wake word disabled or permission not granted). */
   IDLE_DISARMED,
 }

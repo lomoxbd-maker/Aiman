@@ -90,6 +90,7 @@ class MAXViewModel(
   private var pendingInternetActionAfterPermission: PendingInternetAction? = null
   private var pendingPhonePermissionAction: PendingPhonePermissionAction? = null
   private var pendingLoadCalendarAfterPermission: Boolean = false
+  private var pendingUpdateCheckAfterPermission: Boolean = false
 
   init {
     repository.initializeCore()
@@ -318,6 +319,27 @@ class MAXViewModel(
       VisionAndInternetBundle(cam, gal, net, phone, prod.apps, prod.files, prod.smart)
     }
 
+  private val finalIntegrationFlow =
+    combine(
+      repository.followUpPrompt,
+      repository.lastCompletedTask,
+      repository.isThinking,
+      repository.updateState,
+    ) { followUp, lastTask, thinking, update ->
+      FinalIntegrationBundle(followUp, lastTask, thinking, update)
+    }
+
+  private val advancedSystemsFlow =
+    combine(
+      repository.brainState,
+      repository.routines,
+      repository.automationState,
+      repository.lastBriefing,
+      repository.floatingState,
+    ) { brain, routines, autoState, briefing, floating ->
+      AdvancedSystemsBundle(brain, routines, autoState, briefing, floating)
+    }
+
   val uiState: StateFlow<MAXUiState> =
     combine(
       coreAndVoiceFlow,
@@ -327,6 +349,8 @@ class MAXViewModel(
       visionCombinedFlow,
       repository.settingsFlow,
       repository.compatibilityProfile,
+      finalIntegrationFlow,
+      advancedSystemsFlow,
     ) { values ->
       val coreVoice = values[0] as CoreVoiceBundle
       val voiceEmotion = values[1] as VoiceEmotionBundle
@@ -335,6 +359,8 @@ class MAXViewModel(
       val multiBundle = values[4] as VisionAndInternetBundle
       val settings = values[5] as MAXSettings
       val compat = values[6] as com.example.utils.DeviceCompatibilityProfile
+      val finalBundle = values[7] as FinalIntegrationBundle
+      val advanced = values[8] as AdvancedSystemsBundle
 
       val cam = multiBundle.camera
       val gal = multiBundle.gallery
@@ -424,12 +450,77 @@ class MAXViewModel(
         modules = repository.getModuleTopology(),
         compatibility = compat,
         lastWakeWordEvent = auditLogs.lastWakeWordEvent,
+        followUpPrompt = finalBundle.followUpPrompt,
+        lastCompletedTask = finalBundle.lastCompletedTask,
+        isThinking = finalBundle.isThinking,
+        updateState = finalBundle.updateState,
+        brainState = advanced.brainState,
+        routines = advanced.routines,
+        automationState = advanced.automationState,
+        lastBriefing = advanced.lastBriefing,
+        floatingState = advanced.floatingState,
       )
     }.stateIn(
       scope = viewModelScope,
       started = SharingStarted.WhileSubscribed(5_000L),
       initialValue = MAXUiState(modules = repository.getModuleTopology()),
     )
+
+  fun runRoutine(category: com.example.automation.RoutineCategory) {
+    repository.runRoutine(category)
+  }
+
+  fun toggleRoutineEnabled(routineId: String) {
+    repository.toggleRoutineEnabled(routineId)
+  }
+
+  fun activateFloatingBubble(preferSystemOverlay: Boolean = false): Boolean {
+    return repository.activateFloatingBubble(preferSystemOverlay)
+  }
+
+  fun minimizeFloatingBubble() {
+    repository.minimizeFloatingBubble()
+  }
+
+  fun expandFloatingBubble(isVoiceArmed: Boolean = false) {
+    repository.expandFloatingBubble(isVoiceArmed)
+  }
+
+  fun triggerFloatingQuickVoice(): Boolean {
+    return repository.triggerFloatingQuickVoice()
+  }
+
+  fun closeFloatingBubble() {
+    repository.closeFloatingBubble()
+  }
+
+  fun requestOverlayPermissionSettings(): Boolean {
+    return repository.requestOverlayPermissionSettings()
+  }
+
+  fun activateManualVoiceSession() {
+    repository.activateManualVoiceSession()
+  }
+
+  fun finishFollowUpToWakeMode() {
+    repository.finishFollowUpToWakeMode()
+  }
+
+  fun onAppLifecycleChanged(inBackground: Boolean) {
+    repository.handleBackgroundLifecycle(inBackground)
+  }
+
+  fun checkForUpdates() {
+    pendingUpdateCheckAfterPermission = true
+    repository.checkForUpdates()
+    if (repository.updateState.value !is com.example.update.UpdateState.PermissionRequired) {
+      pendingUpdateCheckAfterPermission = false
+    }
+  }
+
+  fun openVerifiedUpdateUrl(url: String): Boolean {
+    return repository.openVerifiedUpdateUrl(url)
+  }
 
   fun armWakeWordStandby() {
     repository.armWakeWordStandby()
@@ -474,7 +565,14 @@ class MAXViewModel(
           repository.summarizeWebContent(pendingAction.topicOrUrl)
         is PendingInternetAction.ExternalUrl ->
           repository.openExternalVerifiedUrl(pendingAction.url)
-        null -> repository.refreshConnectionQuality()
+        null -> {
+          if (pendingUpdateCheckAfterPermission) {
+            pendingUpdateCheckAfterPermission = false
+            repository.checkForUpdates()
+          } else {
+            repository.refreshConnectionQuality()
+          }
+        }
       }
     } else if (permission == AppPermission.CONTACTS && granted) {
       val pending = pendingPhonePermissionAction
@@ -1051,6 +1149,21 @@ class MAXViewModel(
     val apps: AppBundle,
     val files: FilesBundle,
     val smart: SmartBundle,
+  )
+
+  private data class AdvancedSystemsBundle(
+    val brainState: com.example.brain.BrainLifecycleState,
+    val routines: List<com.example.automation.AutomationRoutine>,
+    val automationState: com.example.automation.AutomationState,
+    val lastBriefing: com.example.automation.DailyBriefingSummary?,
+    val floatingState: com.example.floating.FloatingState,
+  )
+
+  private data class FinalIntegrationBundle(
+    val followUpPrompt: String?,
+    val lastCompletedTask: String?,
+    val isThinking: Boolean,
+    val updateState: com.example.update.UpdateState,
   )
 
   private data class VisionAndInternetBundle(

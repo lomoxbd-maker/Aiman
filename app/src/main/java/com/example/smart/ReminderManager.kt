@@ -1,11 +1,14 @@
 package com.example.smart
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import com.example.permissions.AppPermission
 import com.example.permissions.PermissionController
 import com.example.permissions.PermissionRequestHandler
@@ -170,6 +173,12 @@ class ReminderManager(
       if (permissionController.checkStatus(AppPermission.NOTIFICATIONS) != com.example.permissions.PermissionStatus.GRANTED) {
         return false
       }
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+        PackageManager.PERMISSION_GRANTED
+      ) {
+        return false
+      }
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         val mgr = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channel =
@@ -188,8 +197,12 @@ class ReminderManager(
           .setPriority(NotificationCompat.PRIORITY_DEFAULT)
           .setAutoCancel(true)
           .build()
-      NotificationManagerCompat.from(context).notify(title.hashCode(), notif)
-      true
+      try {
+        NotificationManagerCompat.from(context).notify(title.hashCode(), notif)
+        true
+      } catch (_: SecurityException) {
+        false
+      }
     }.getOrDefault(false)
   }
 

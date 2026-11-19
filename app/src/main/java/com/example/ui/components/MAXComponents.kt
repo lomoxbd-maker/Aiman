@@ -78,6 +78,7 @@ fun CoreHeroBanner(
       targetValue =
         when (coreState) {
           CoreLifecycleState.LISTENING_PREPARED -> EmeraldReady
+          CoreLifecycleState.AWAITING_FOLLOW_UP -> EmeraldReady
           CoreLifecycleState.STANDBY -> MaterialTheme.colorScheme.primary
           CoreLifecycleState.IDLE_DISARMED -> AmberStandby
           else -> MaterialTheme.colorScheme.secondary
@@ -88,6 +89,7 @@ fun CoreHeroBanner(
   val statusHeadline =
     when (coreState) {
       CoreLifecycleState.LISTENING_PREPARED -> "Listening State Active"
+      CoreLifecycleState.AWAITING_FOLLOW_UP -> "Awaiting Follow-up • Sanju"
       CoreLifecycleState.STANDBY -> "Standby • Waiting for \"MAX\""
       CoreLifecycleState.IDLE_DISARMED -> "Disarmed • Manual Mode"
       CoreLifecycleState.INITIALIZING -> "Booting MAX Core..."
